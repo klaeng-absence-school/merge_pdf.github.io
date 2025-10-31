@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Klaeng Merge PDF Service</title>
+    <title>Klaeng PDF Service</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&family=Caveat:wght@700&family=Dancing+Script:wght@700&family=Pacifico&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&family=Caveat:wght@700&family=Dancing+Script:wght@700&family=Pacifico&family=Mali:wght@400;700&family=Kodchasan:wght@400;700&family=Charm:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        .signature-font-1 { font-family: 'Caveat', cursive; }
-        .signature-font-2 { font-family: 'Dancing Script', cursive; }
-        .signature-font-3 { font-family: 'Pacifico', cursive; }
+        .signature-font-1 { font-family: 'Mali', cursive; }
+        .signature-font-2 { font-family: 'Kodchasan', cursive; }
+        .signature-font-3 { font-family: 'Charm', cursive; }
         .pdf-page-thumbnail { cursor: pointer; position: relative; }
         .pdf-page-thumbnail.selected { border: 3px solid #ef4444; }
         .pdf-page-thumbnail.selected::after {
@@ -40,14 +40,50 @@
             max-width: 100%;
         }
         .dragging { opacity: 0.5; }
+        
+        /* Styles for Draggable and Resizable Signature Placeholder */
         .signature-placeholder {
             position: absolute;
             border: 2px dashed #4f46e5;
-            background: rgba(79, 70, 229, 0.1);
-            cursor: move;
+            background-color: rgba(79, 70, 229, 0.1);
+            cursor: grab;
+            box-sizing: border-box;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
         }
-        .signature-placeholder::after {
-            content: '✕';
+        
+        .signature-placeholder.dragging {
+            cursor: grabbing;
+        }
+        
+        /* Saved Signature Item Highlight */
+        .sig-item.selected-sig {
+            border-color: #4f46e5;
+            background-color: #eef2ff;
+        }
+
+        /* Global Resizer/Delete styles */
+        .resizer {
+            width: 10px;
+            height: 10px;
+            background: #4f46e5;
+            position: absolute;
+            border-radius: 50%;
+            border: 1px solid white;
+            z-index: 10;
+        }
+        .resizer.top-right {
+            top: -5px;
+            right: -5px;
+            cursor: nwse-resize;
+        }
+        .resizer.bottom-left {
+            bottom: -5px;
+            left: -5px;
+            cursor: nesw-resize;
+        }
+        .delete-btn {
             position: absolute;
             top: -10px;
             right: -10px;
@@ -60,41 +96,102 @@
             align-items: center;
             justify-content: center;
             font-size: 12px;
+            font-weight: bold;
             cursor: pointer;
+            z-index: 11;
+        }
+        .file-preview-image {
+            max-width: 100%;
+            max-height: 150px;
+            object-fit: contain;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+        }
+        /* Image List Dragging Styles */
+        .image-item-draggable {
+            cursor: grab;
+            user-select: none;
+            position: relative;
+        }
+        .image-item-draggable:active {
+            cursor: grabbing;
+        }
+        .is-dragging {
+            opacity: 0.5;
+            transform: scale(1.02);
+            transition: transform 0.1s;
+        }
+        
+        /* Style for A4 Preview */
+        #layoutPreviewWrapper {
+            width: 210mm; /* A4 width */
+            height: 297mm; /* A4 height */
+            margin: 0 auto;
+            position: relative;
+            transform: scale(0.7); /* Scale down for display */
+            transform-origin: top center;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            background: white;
+        }
+        .preview-page {
+            width: 210mm; 
+            height: 297mm; 
+            box-sizing: border-box;
+            background: white;
+            position: absolute;
+            top: 0;
+            left: 0;
+            display: grid;
+        }
+        .preview-grid-cell {
+            border: 1px dotted #ccc;
+            box-sizing: border-box;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0; /* Managed by global padding */
+            position: relative;
+        }
+        .preview-grid-cell img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            opacity: 0.8;
         }
     </style>
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
     <div class="container mx-auto px-4 py-8 max-w-6xl">
         <div class="bg-white rounded-2xl shadow-2xl p-8">
-            <!-- Header -->
-            <div class="text-center mb-8">
-                <h1 class="text-4xl font-bold text-indigo-600 mb-2">Klaeng Merge PDF Service</h1>
-                <p class="text-gray-600">เลือกไฟล์ PDF หลายไฟล์เพื่อรวมเป็นไฟล์เดียว</p>
+            <div class="text-center mb-8 flex items-center justify-center">
+                <img src="https://mihtvcbzguzkvfwnlnem.supabase.co/storage/v1/object/public/user-images/U5447c1a665091d4cc01803728afeef61/klaeng%20Logo%20Rotate%20don't%20stack%20frame.png" alt="Klaeng Logo" class="h-16 w-auto mr-4">
+                <div>
+                    <h1 class="text-4xl font-bold text-indigo-600 mb-2">Klaeng PDF Service</h1>
+                    <p class="text-gray-600">เครื่องมือจัดการเอกสาร PDF ครบวงจร</p>
+                </div>
             </div>
-
-            <!-- Tab Navigation -->
-            <div class="flex mb-6 border-b border-gray-200">
-                <button id="tabMerge" class="tab-button px-6 py-3 font-semibold border-b-2 border-indigo-600 text-indigo-600">
+            
+            <div class="mb-6 border-b border-gray-200 pb-4">
+                <label for="docName" class="block text-sm font-bold text-gray-700 mb-2">ชื่อเอกสารที่บันทึก:</label>
+                <input type="text" id="docName" placeholder="กรอกชื่อเอกสาร (เช่น รายงานสรุปประจำเดือน)" class="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-indigo-500 focus:outline-none transition-all">
+            </div>
+            <div class="flex mb-6 border-b border-gray-200 overflow-x-auto">
+                <button id="tabMerge" class="tab-button px-6 py-3 font-semibold border-b-2 border-indigo-600 text-indigo-600 whitespace-nowrap">
                     รวม PDF
                 </button>
-                <button id="tabDelete" class="tab-button px-6 py-3 font-semibold text-gray-600 hover:text-indigo-600">
+                <button id="tabDelete" class="tab-button px-6 py-3 font-semibold text-gray-600 hover:text-indigo-600 whitespace-nowrap">
                     ลบหน้า PDF
                 </button>
-                <button id="tabSign" class="tab-button px-6 py-3 font-semibold text-gray-600 hover:text-indigo-600">
+                <button id="tabSign" class="tab-button px-6 py-3 font-semibold text-gray-600 hover:text-indigo-600 whitespace-nowrap">
                     ลงลายเซ็น
+                </button>
+                <button id="tabImageToPdf" class="tab-button px-6 py-3 font-semibold text-gray-600 hover:text-indigo-600 whitespace-nowrap">
+                    รูปภาพ > PDF
                 </button>
             </div>
 
-            <!-- Merge PDF Tab -->
             <div id="mergePanel" class="tab-panel">
-                <!-- Document Name Input -->
-                <div class="mb-6">
-                    <label for="docName" class="block text-sm font-semibold text-gray-700 mb-2">ชื่อเอกสาร:</label>
-                    <input type="text" id="docName" placeholder="กรอกชื่อเอกสาร" class="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-indigo-500 focus:outline-none transition-all">
-                </div>
-
-                <!-- Upload Area -->
                 <div class="mb-6">
                     <label for="fileInput" class="block mb-4">
                         <div class="border-4 border-dashed border-indigo-300 rounded-xl p-12 text-center hover:border-indigo-500 hover:bg-indigo-50 transition-all cursor-pointer">
@@ -107,18 +204,12 @@
                     </label>
                     <input type="file" id="fileInput" accept=".pdf" multiple class="hidden">
                 </div>
-
-                <!-- File List -->
                 <div id="fileList" class="mb-6 space-y-2"></div>
-
-                <!-- File Counter -->
                 <div id="fileCounter" class="mb-4 text-center">
                     <span class="inline-block bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg font-semibold">
                         จำนวนไฟล์ที่เลือก: <span id="fileCount">0</span> ไฟล์
                     </span>
                 </div>
-
-                <!-- Action Buttons -->
                 <div class="flex gap-4">
                     <button id="mergeBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none shadow-lg">
                         <span class="flex items-center justify-center">
@@ -134,7 +225,6 @@
                 </div>
             </div>
 
-            <!-- Delete Pages Tab -->
             <div id="deletePanel" class="tab-panel hidden">
                 <div class="mb-6">
                     <label for="deleteFileInput" class="block mb-4">
@@ -148,11 +238,8 @@
                     </label>
                     <input type="file" id="deleteFileInput" accept=".pdf" class="hidden">
                 </div>
-
                 <div id="deleteFileName" class="mb-4 text-center text-gray-700 font-semibold"></div>
-
                 <div id="pageThumbnails" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"></div>
-
                 <div class="flex gap-4">
                     <button id="deleteSelectedBtn" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-6 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                         ลบหน้าที่เลือก
@@ -163,7 +250,6 @@
                 </div>
             </div>
 
-            <!-- Sign PDF Tab -->
             <div id="signPanel" class="tab-panel hidden">
                 <div class="mb-6">
                     <label for="signFileInput" class="block mb-4">
@@ -171,13 +257,12 @@
                             <svg class="mx-auto h-16 w-16 text-indigo-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                             </svg>
-                            <p class="text-lg font-semibold text-gray-700 mb-2">เลือกไฟล์ PDF เพื่อลงลายเซ็น</p>
+                            <p class="text-lg font-semibold text-gray-700 mb-2">เลือกไฟล์ PDF เพื่อลงลายเซ็น (รองรับเฉพาะแนวตั้ง)</p>
                         </div>
                     </label>
                     <input type="file" id="signFileInput" accept=".pdf" class="hidden">
                 </div>
 
-                <!-- Signature Mode Selection -->
                 <div class="mb-6">
                     <label class="block text-sm font-semibold text-gray-700 mb-3">เลือกรูปแบบลายเซ็น:</label>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -202,7 +287,6 @@
                     </div>
                 </div>
 
-                <!-- Draw Signature Panel -->
                 <div id="drawPanel" class="signature-panel mb-6">
                     <label class="block text-sm font-semibold text-gray-700 mb-2">วาดลายเซ็นของคุณ:</label>
                     <div class="border-2 border-gray-300 rounded-xl p-4 bg-white">
@@ -213,7 +297,6 @@
                     </div>
                 </div>
 
-                <!-- Type Signature Panel -->
                 <div id="typePanel" class="signature-panel hidden mb-6">
                     <label class="block text-sm font-semibold text-gray-700 mb-2">พิมพ์ชื่อของคุณ:</label>
                     <input type="text" id="typeInput" placeholder="กรอกชื่อ" class="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-indigo-500 focus:outline-none mb-3">
@@ -237,7 +320,6 @@
                     </div>
                 </div>
 
-                <!-- Upload Signature Panel -->
                 <div id="uploadPanel" class="signature-panel hidden mb-6">
                     <label class="block text-sm font-semibold text-gray-700 mb-2">อัพโหลดรูปลายเซ็น:</label>
                     <input type="file" id="uploadSignInput" accept="image/*" class="mb-3 w-full px-4 py-3 border-2 border-gray-300 rounded-xl">
@@ -246,16 +328,37 @@
                         <img id="uploadPreview" class="max-w-xs border-2 border-gray-300 rounded-lg">
                     </div>
                 </div>
+                
+                <div class="mb-6 border-t border-gray-200 pt-6">
+                    <div class="flex items-center justify-between mb-3">
+                        <label class="block text-xl font-bold text-gray-700">ลายเซ็นที่บันทึกไว้</label>
+                        <button id="useCurrentSigBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition-all disabled:opacity-50" disabled>
+                            บันทึกเป็นลายเซ็น
+                        </button>
+                    </div>
+                    <div id="signatureManager" class="space-y-3 p-4 bg-gray-50 rounded-xl border border-gray-200 min-h-[50px]">
+                        <p class="text-center text-gray-500 col-span-full" id="noSigMessage">ยังไม่มีลายเซ็นที่บันทึกไว้</p>
+                    </div>
+                </div>
 
-                <!-- PDF Preview Area -->
                 <div id="pdfPreviewArea" class="hidden mb-6">
-                    <label class="block text-sm font-semibold text-gray-700 mb-2">คลิกเพื่อวางลายเซ็นในตำแหน่งที่ต้องการ:</label>
-                    <div class="mb-3 flex gap-2 items-center">
-                        <label class="text-sm font-semibold text-gray-700">หน้า:</label>
-                        <select id="pageSelector" class="px-3 py-2 border-2 border-gray-300 rounded-lg"></select>
-                        <label class="text-sm font-semibold text-gray-700 ml-4">ขนาดลายเซ็น:</label>
-                        <input type="range" id="signatureSizeSlider" min="50" max="300" value="150" class="w-32">
-                        <span id="signatureSizeValue" class="text-sm text-gray-600">150px</span>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">คลิกเพื่อวางลายเซ็นในตำแหน่งที่ต้องการ (สามารถลาก/ย่อ/ขยายได้):</label>
+                    <div class="mb-3 flex gap-2 items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <button id="prevPageBtn" class="px-3 py-1 bg-indigo-200 hover:bg-indigo-300 text-indigo-800 font-semibold rounded-lg transition-all disabled:opacity-50">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                            </button>
+                            <label class="text-sm font-semibold text-gray-700">หน้า:</label>
+                            <select id="pageSelector" class="px-3 py-2 border-2 border-gray-300 rounded-lg"></select>
+                            <button id="nextPageBtn" class="px-3 py-1 bg-indigo-200 hover:bg-indigo-300 text-indigo-800 font-semibold rounded-lg transition-all disabled:opacity-50">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                            </button>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-sm font-semibold text-gray-700">ขนาดลายเซ็นเริ่มต้น:</label>
+                            <input type="range" id="signatureSizeSlider" min="50" max="300" value="150" class="w-32">
+                            <span id="signatureSizeValue" class="text-sm text-gray-600">150px</span>
+                        </div>
                     </div>
                     <div class="border-2 border-gray-300 rounded-xl p-4 bg-white relative" style="overflow: auto;">
                         <div id="canvasContainer" class="relative inline-block">
@@ -273,8 +376,81 @@
                     </button>
                 </div>
             </div>
+            
+            <div id="imageToPdfPanel" class="tab-panel hidden">
+                <div class="mb-6">
+                    <label for="imageToPdfInput" class="block mb-4">
+                        <div class="border-4 border-dashed border-indigo-300 rounded-xl p-12 text-center hover:border-indigo-500 hover:bg-indigo-50 transition-all cursor-pointer">
+                            <svg class="mx-auto h-16 w-16 text-indigo-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            <p class="text-lg font-semibold text-gray-700 mb-2">เลือกไฟล์รูปภาพเพื่อแปลงเป็น PDF</p>
+                            <p class="text-sm text-gray-500">รองรับ JPG, PNG (เลือกได้หลายไฟล์)</p>
+                        </div>
+                    </label>
+                    <input type="file" id="imageToPdfInput" accept="image/jpeg, image/png" multiple class="hidden">
+                </div>
+                
+                <div class="mb-6 p-4 border border-gray-300 rounded-xl bg-gray-50 flex flex-wrap lg:flex-nowrap gap-6 justify-center items-start">
+                    
+                    <div class="w-full lg:w-1/4">
+                        <label class="block text-sm font-bold text-gray-700 mb-3">1. กำหนดการจัดเรียง (Grid)</label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label for="layoutColumns" class="block text-xs text-gray-500 mb-1">จำนวนคอลัมน์:</label>
+                                <input type="number" id="layoutColumns" value="1" min="1" max="10" class="w-full px-3 py-2 border rounded-lg text-center" oninput="debouncedRenderLayoutPreview()">
+                            </div>
+                            <div>
+                                <label for="layoutRows" class="block text-xs text-gray-500 mb-1">จำนวนแถว:</label>
+                                <input type="number" id="layoutRows" value="1" min="1" max="10" class="w-full px-3 py-2 border rounded-lg text-center" oninput="debouncedRenderLayoutPreview()">
+                            </div>
+                        </div>
+                        <p class="text-sm text-indigo-600 mt-3 font-semibold">ภาพต่อหน้า: <span id="imagesPerPageCount">1</span> ภาพ</p>
+                    </div>
 
-            <!-- Progress Bar -->
+                    <div class="w-full lg:w-1/3">
+                        <label class="block text-sm font-bold text-gray-700 mb-3">2. กำหนดระยะห่างภาพ (Padding/mm)</label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label for="paddingVertical" class="block text-xs text-gray-500 mb-1">บน/ล่าง (mm):</label>
+                                <input type="number" id="paddingVertical" value="5" min="0" max="30" step="0.5" class="w-full px-3 py-2 border rounded-lg text-center" oninput="debouncedRenderLayoutPreview()">
+                            </div>
+                            <div>
+                                <label for="paddingHorizontal" class="block text-xs text-gray-500 mb-1">ซ้าย/ขวา (mm):</label>
+                                <input type="number" id="paddingHorizontal" value="5" min="0" max="30" step="0.5" class="w-full px-3 py-2 border rounded-lg text-center" oninput="debouncedRenderLayoutPreview()">
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2">ระยะห่างนี้จะถูกนำไปใช้กับขอบในของแต่ละช่อง Grid</p>
+                    </div>
+                </div>
+                <div class="mb-6 border-t border-gray-200 pt-6">
+                    <div class="w-full text-center">
+                        <label class="block text-sm font-bold text-gray-700 mb-3">ตัวอย่างการจัดหน้า (หน้า <span id="previewPageNum">1</span>/<span id="previewPageTotal">1</span>)</label>
+                        <div class="flex justify-center items-center gap-2 mb-2">
+                            <button id="prevLayoutBtn" class="p-2 bg-indigo-200 hover:bg-indigo-300 text-indigo-800 rounded-full disabled:opacity-50">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                            </button>
+                            <div id="layoutPreviewWrapper" class="relative">
+                                </div>
+                            <button id="nextLayoutBtn" class="p-2 bg-indigo-200 hover:bg-indigo-300 text-indigo-800 rounded-full disabled:opacity-50">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div id="imageToPdfList" class="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <p class="text-center text-gray-500 col-span-full" id="noImageMessage">ยังไม่มีรูปภาพที่เลือก</p>
+                </div>
+
+                <div class="flex gap-4">
+                    <button id="convertImagesBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-6 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                        แปลงเป็น PDF
+                    </button>
+                    <button id="clearImagesBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-700 font-bold py-4 px-6 rounded-xl transition-all">
+                        ล้าง
+                    </button>
+                </div>
+            </div>
             <div id="progressContainer" class="mt-6 hidden">
                 <div class="bg-gray-200 rounded-full h-4 overflow-hidden">
                     <div id="progressBar" class="bg-indigo-600 h-full transition-all duration-300 rounded-full"></div>
@@ -282,7 +458,6 @@
                 <p id="progressText" class="text-center text-sm text-gray-600 mt-2"></p>
             </div>
 
-            <!-- Status Message -->
             <div id="statusMessage" class="mt-6 hidden"></div>
         </div>
     </div>
@@ -298,13 +473,28 @@
         let pagesToDelete = new Set();
         let currentSignMode = 'draw';
         let currentFont = '1';
-        let signatureImage = null;
-        let signatures = [];
+        let signatureImage = null; 
+        let signatures = []; 
         let currentPage = 1;
         let pdfScale = 1.5;
         let signatureSize = 150;
+        
+        // Saved Signatures
+        let savedSignaturesList = []; 
+        const localStorageKey = 'klaengSavedSignatures';
+        
+        // Image to PDF
+        let imagesToConvert = []; 
+        let currentLayoutPage = 1; // For preview pagination
 
-        // Elements
+        // PDF unit conversion
+        const MM_TO_POINTS = 2.83464567; 
+        const A4_WIDTH_MM = 210; 
+        const A4_HEIGHT_MM = 297; 
+        const A4_WIDTH_PT = 595.28; 
+        const A4_HEIGHT_PT = 841.89;
+
+        // Elements (Global declaration for convenience)
         const fileInput = document.getElementById('fileInput');
         const fileList = document.getElementById('fileList');
         const fileCount = document.getElementById('fileCount');
@@ -316,9 +506,11 @@
         const tabMerge = document.getElementById('tabMerge');
         const tabDelete = document.getElementById('tabDelete');
         const tabSign = document.getElementById('tabSign');
+        const tabImageToPdf = document.getElementById('tabImageToPdf');
         const mergePanel = document.getElementById('mergePanel');
         const deletePanel = document.getElementById('deletePanel');
         const signPanel = document.getElementById('signPanel');
+        const imageToPdfPanel = document.getElementById('imageToPdfPanel');
         
         // Delete page elements
         const deleteFileInput = document.getElementById('deleteFileInput');
@@ -350,13 +542,26 @@
         const signatureSizeValue = document.getElementById('signatureSizeValue');
         const saveSignedBtn = document.getElementById('saveSignedBtn');
         const clearSignBtn = document.getElementById('clearSignBtn');
+        const useCurrentSigBtn = document.getElementById('useCurrentSigBtn');
+        const prevPageBtn = document.getElementById('prevPageBtn');
+        const nextPageBtn = document.getElementById('nextPageBtn');
+        
+        // Image to PDF elements
+        const imageToPdfInput = document.getElementById('imageToPdfInput');
+        const imageToPdfList = document.getElementById('imageToPdfList');
+        const convertImagesBtn = document.getElementById('convertImagesBtn');
+        const clearImagesBtn = document.getElementById('clearImagesBtn');
+        const layoutColumnsInput = document.getElementById('layoutColumns');
+        const layoutRowsInput = document.getElementById('layoutRows');
+        const paddingVerticalInput = document.getElementById('paddingVertical');
+        const paddingHorizontalInput = document.getElementById('paddingHorizontal');
         
         const progressContainer = document.getElementById('progressContainer');
         const progressBar = document.getElementById('progressBar');
         const progressText = document.getElementById('progressText');
         const statusMessage = document.getElementById('statusMessage');
 
-        // Thai datetime
+        // --- Utility Functions (Time, Status, Progress, Download) ---
         const thaiMonths = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
             'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
 
@@ -371,6 +576,51 @@
             return `${day} ${month} ${year} ${hours}:${minutes}:${seconds}`;
         }
 
+        function downloadPDF(pdfBytes, baseName) {
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            const thaiDateTime = getThaiDateTime();
+            const filename = (baseName.trim() || 'document') + ` ${thaiDateTime}.pdf`;
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function showProgress() {
+            progressContainer.classList.remove('hidden');
+            updateProgress(0, 'เริ่มต้น...');
+        }
+
+        function hideProgress() {
+            setTimeout(() => {
+                progressContainer.classList.add('hidden');
+            }, 1000);
+        }
+
+        function updateProgress(percent, text) {
+            progressBar.style.width = percent + '%';
+            progressText.textContent = text;
+        }
+
+        function showStatus(message, type) {
+            statusMessage.className = `mt-6 p-4 rounded-lg ${type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`;
+            statusMessage.textContent = message;
+            statusMessage.classList.remove('hidden');
+            
+            setTimeout(() => {
+                hideStatus();
+            }, 5000);
+        }
+
+        function hideStatus() {
+            statusMessage.classList.add('hidden');
+        }
+
         // Tab switching
         function switchTab(tab) {
             document.querySelectorAll('.tab-button').forEach(btn => {
@@ -379,21 +629,31 @@
             });
             document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.add('hidden'));
             
+            let activeBtn, activePanel;
+
             if (tab === 'merge') {
-                tabMerge.classList.add('border-indigo-600', 'text-indigo-600');
-                mergePanel.classList.remove('hidden');
+                activeBtn = tabMerge; activePanel = mergePanel;
             } else if (tab === 'delete') {
-                tabDelete.classList.add('border-indigo-600', 'text-indigo-600');
-                deletePanel.classList.remove('hidden');
+                activeBtn = tabDelete; activePanel = deletePanel;
             } else if (tab === 'sign') {
-                tabSign.classList.add('border-indigo-600', 'text-indigo-600');
-                signPanel.classList.remove('hidden');
+                activeBtn = tabSign; activePanel = signPanel;
+                document.querySelectorAll('#signatureManager .sig-item').forEach(el => el.classList.remove('selected-sig'));
+                signatureImage = null; 
+            } else if (tab === 'imageToPdf') {
+                activeBtn = tabImageToPdf; activePanel = imageToPdfPanel;
+                renderLayoutPreview(); 
+            } else {
+                return;
             }
+
+            activeBtn.classList.add('border-indigo-600', 'text-indigo-600');
+            activePanel.classList.remove('hidden');
         }
 
         tabMerge.addEventListener('click', () => switchTab('merge'));
         tabDelete.addEventListener('click', () => switchTab('delete'));
         tabSign.addEventListener('click', () => switchTab('sign'));
+        tabImageToPdf.addEventListener('click', () => switchTab('imageToPdf'));
 
         // Merge PDF functionality
         fileInput.addEventListener('change', (e) => {
@@ -549,74 +809,116 @@
             const file = e.target.files[0];
             if (!file) return;
 
+            if (file.type !== 'application/pdf') {
+                showStatus('กรุณาเลือกไฟล์ PDF เท่านั้น', 'error');
+                deleteFileInput.value = '';
+                return;
+            }
+
             try {
                 showProgress();
-                updateProgress(50, 'กำลังโหลดไฟล์...');
+                updateProgress(30, 'กำลังอ่านไฟล์...');
                 
                 const arrayBuffer = await file.arrayBuffer();
-                currentPdfBytes = new Uint8Array(arrayBuffer);
-                const { PDFDocument } = PDFLib;
-                currentPdfDoc = await PDFDocument.load(currentPdfBytes);
+                const uint8Array = new Uint8Array(arrayBuffer);
+                const header = String.fromCharCode.apply(null, uint8Array.slice(0, 5));
                 
-                deleteFileName.textContent = `ไฟล์: ${file.name} (${currentPdfDoc.getPageCount()} หน้า)`;
+                if (header !== '%PDF-') {
+                    throw new Error('ไฟล์นี้ไม่ใช่ PDF ที่ถูกต้อง');
+                }
+                
+                currentPdfBytes = uint8Array;
+                
+                updateProgress(50, 'กำลังโหลดไฟล์...');
+                
+                const { PDFDocument } = PDFLib;
+                currentPdfDoc = await PDFDocument.load(currentPdfBytes, {
+                    ignoreEncryption: true
+                });
+                
+                const pageCount = currentPdfDoc.getPageCount();
+                deleteFileName.textContent = `ไฟล์: ${file.name} (${pageCount} หน้า)`;
                 pagesToDelete.clear();
                 
+                updateProgress(70, 'กำลังสร้างภาพตัวอย่าง...');
                 await renderPageThumbnails();
                 deleteSelectedBtn.disabled = true;
                 
                 updateProgress(100, 'เสร็จสิ้น');
+                showStatus('โหลดไฟล์สำเร็จ!', 'success');
                 hideProgress();
             } catch (error) {
                 showStatus('เกิดข้อผิดพลาดในการโหลดไฟล์: ' + error.message, 'error');
+                console.error('Delete PDF Load Error:', error);
+                deleteFileInput.value = '';
+                deleteFileName.textContent = '';
+                pageThumbnails.innerHTML = '';
+                currentPdfDoc = null;
+                currentPdfBytes = null;
                 hideProgress();
             }
         });
 
         async function renderPageThumbnails() {
             pageThumbnails.innerHTML = '';
+            
+            if (!currentPdfDoc || !currentPdfBytes) {
+                throw new Error('ไม่พบข้อมูล PDF');
+            }
+            
             const pageCount = currentPdfDoc.getPageCount();
             
-            const loadingTask = pdfjsLib.getDocument({ data: currentPdfBytes });
-            const pdf = await loadingTask.promise;
+            try {
+                // FIX: Use slice() for thumbnails to prevent detachment
+                const pdfBytesCopy = currentPdfBytes.slice(); 
 
-            for (let i = 1; i <= pageCount; i++) {
-                const page = await pdf.getPage(i);
-                const scale = 0.5;
-                const viewport = page.getViewport({ scale });
-                
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
-                
-                await page.render({
-                    canvasContext: context,
-                    viewport: viewport
-                }).promise;
-                
-                const container = document.createElement('div');
-                container.className = 'pdf-page-thumbnail border-2 border-gray-300 rounded-lg p-2 hover:border-indigo-500 transition-all';
-                container.dataset.pageNum = i;
-                
-                const pageLabel = document.createElement('div');
-                pageLabel.className = 'text-center font-semibold text-sm mb-2';
-                pageLabel.textContent = `หน้า ${i}`;
-                
-                container.appendChild(pageLabel);
-                container.appendChild(canvas);
-                
-                container.addEventListener('click', () => {
-                    if (pagesToDelete.has(i)) {
-                        pagesToDelete.delete(i);
-                        container.classList.remove('selected');
-                    } else {
-                        pagesToDelete.add(i);
-                        container.classList.add('selected');
-                    }
-                    deleteSelectedBtn.disabled = pagesToDelete.size === 0 || pagesToDelete.size === pageCount;
+                const loadingTask = pdfjsLib.getDocument({ 
+                    data: pdfBytesCopy
                 });
-                
-                pageThumbnails.appendChild(container);
+                const pdf = await loadingTask.promise;
+
+                for (let i = 1; i <= pageCount; i++) {
+                    const page = await pdf.getPage(i);
+                    const scale = 0.5;
+                    const viewport = page.getViewport({ scale });
+                    
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    
+                    await page.render({
+                        canvasContext: context,
+                        viewport: viewport
+                    }).promise;
+                    
+                    const container = document.createElement('div');
+                    container.className = 'pdf-page-thumbnail border-2 border-gray-300 rounded-lg p-2 hover:border-indigo-500 transition-all';
+                    container.dataset.pageNum = i;
+                    
+                    const pageLabel = document.createElement('div');
+                    pageLabel.className = 'text-center font-semibold text-sm mb-2';
+                    pageLabel.textContent = `หน้า ${i}`;
+                    
+                    container.appendChild(pageLabel);
+                    container.appendChild(canvas);
+                    
+                    container.addEventListener('click', () => {
+                        if (pagesToDelete.has(i)) {
+                            pagesToDelete.delete(i);
+                            container.classList.remove('selected');
+                        } else {
+                            pagesToDelete.add(i);
+                            container.classList.add('selected');
+                        }
+                        deleteSelectedBtn.disabled = pagesToDelete.size === 0 || pagesToDelete.size === pageCount;
+                    });
+                    
+                    pageThumbnails.appendChild(container);
+                }
+            } catch (error) {
+                console.error('Error rendering thumbnails:', error);
+                throw new Error('ไม่สามารถสร้างภาพตัวอย่างได้');
             }
         }
 
@@ -642,7 +944,7 @@
                 const pdfBytes = await newPdf.save();
                 
                 updateProgress(100, 'เสร็จสิ้น');
-                downloadPDF(pdfBytes, 'deleted-pages-pdf');
+                downloadPDF(pdfBytes, docName.value.trim() || 'deleted-pages-pdf'); // Use global docName
                 showStatus(`ลบ ${pagesToDelete.size} หน้าสำเร็จ!`, 'success');
                 hideProgress();
                 
@@ -670,40 +972,40 @@
         });
 
         // Sign PDF functionality
-        const drawCtx = drawCanvas.getContext('2d');
+        const drawCtx = document.getElementById('drawCanvas').getContext('2d');
         let isDrawing = false;
 
         // Drawing setup
-        drawCanvas.addEventListener('mousedown', startDrawing);
-        drawCanvas.addEventListener('mousemove', draw);
-        drawCanvas.addEventListener('mouseup', stopDrawing);
-        drawCanvas.addEventListener('mouseout', stopDrawing);
+        document.getElementById('drawCanvas').addEventListener('mousedown', startDrawing);
+        document.getElementById('drawCanvas').addEventListener('mousemove', draw);
+        document.getElementById('drawCanvas').addEventListener('mouseup', stopDrawing);
+        document.getElementById('drawCanvas').addEventListener('mouseout', stopDrawing);
         
         // Touch support
-        drawCanvas.addEventListener('touchstart', (e) => {
+        document.getElementById('drawCanvas').addEventListener('touchstart', (e) => {
             e.preventDefault();
             const touch = e.touches[0];
             const mouseEvent = new MouseEvent('mousedown', {
                 clientX: touch.clientX,
                 clientY: touch.clientY
             });
-            drawCanvas.dispatchEvent(mouseEvent);
+            document.getElementById('drawCanvas').dispatchEvent(mouseEvent);
         });
         
-        drawCanvas.addEventListener('touchmove', (e) => {
+        document.getElementById('drawCanvas').addEventListener('touchmove', (e) => {
             e.preventDefault();
             const touch = e.touches[0];
             const mouseEvent = new MouseEvent('mousemove', {
                 clientX: touch.clientX,
                 clientY: touch.clientY
             });
-            drawCanvas.dispatchEvent(mouseEvent);
+            document.getElementById('drawCanvas').dispatchEvent(mouseEvent);
         });
         
-        drawCanvas.addEventListener('touchend', (e) => {
+        document.getElementById('drawCanvas').addEventListener('touchend', (e) => {
             e.preventDefault();
             const mouseEvent = new MouseEvent('mouseup', {});
-            drawCanvas.dispatchEvent(mouseEvent);
+            document.getElementById('drawCanvas').dispatchEvent(mouseEvent);
         });
 
         function startDrawing(e) {
@@ -759,6 +1061,11 @@
                 modeUploadBtn.classList.remove('border-gray-300');
                 uploadPanel.classList.remove('hidden');
             }
+            
+            useCurrentSigBtn.disabled = false;
+            
+            document.querySelectorAll('#signatureManager .sig-item').forEach(el => el.classList.remove('selected-sig'));
+            signatureImage = null; 
         }
 
         modeDrawBtn.addEventListener('click', () => switchSignMode('draw'));
@@ -766,8 +1073,8 @@
         modeUploadBtn.addEventListener('click', () => switchSignMode('upload'));
 
         // Type signature
-        typeInput.addEventListener('input', (e) => {
-            typePreview.textContent = e.target.value;
+        document.getElementById('typeInput').addEventListener('input', (e) => {
+            document.getElementById('typePreview').textContent = e.target.value;
         });
 
         document.querySelectorAll('.font-selector').forEach(btn => {
@@ -779,20 +1086,19 @@
                 });
                 e.currentTarget.classList.add('border-indigo-600', 'bg-indigo-50');
                 e.currentTarget.classList.remove('border-gray-300');
-                typePreview.className = `signature-font-${currentFont} text-4xl`;
+                document.getElementById('typePreview').className = `signature-font-${currentFont} text-4xl`;
             });
         });
 
         // Upload signature
-        uploadSignInput.addEventListener('change', (e) => {
+        document.getElementById('uploadSignInput').addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
             
             const reader = new FileReader();
             reader.onload = (event) => {
-                signatureImage = event.target.result;
-                uploadPreview.src = signatureImage;
-                uploadPreviewContainer.classList.remove('hidden');
+                document.getElementById('uploadPreview').src = event.target.result; 
+                document.getElementById('uploadPreviewContainer').classList.remove('hidden');
             };
             reader.readAsDataURL(file);
         });
@@ -802,135 +1108,235 @@
             const file = e.target.files[0];
             if (!file) return;
 
+            if (file.type !== 'application/pdf') {
+                showStatus('กรุณาเลือกไฟล์ PDF เท่านั้น', 'error');
+                signFileInput.value = '';
+                return;
+            }
+
             try {
                 showProgress();
-                updateProgress(50, 'กำลังโหลดไฟล์...');
+                updateProgress(30, 'กำลังอ่านไฟล์...');
                 
                 const arrayBuffer = await file.arrayBuffer();
-                currentPdfBytes = new Uint8Array(arrayBuffer);
+                const uint8Array = new Uint8Array(arrayBuffer);
+                const header = String.fromCharCode.apply(null, uint8Array.slice(0, 5));
+                
+                if (header !== '%PDF-') {
+                    throw new Error('ไฟล์นี้ไม่ใช่ PDF ที่ถูกต้อง');
+                }
+                
+                currentPdfBytes = uint8Array;
+                
+                updateProgress(50, 'กำลังโหลด PDF...');
                 
                 const { PDFDocument } = PDFLib;
-                currentPdfDoc = await PDFDocument.load(currentPdfBytes);
+                currentPdfDoc = await PDFDocument.load(currentPdfBytes, {
+                    ignoreEncryption: true
+                });
                 
-                signatures = [];
+                updateProgress(70, 'กำลังเตรียมการแสดงผล...');
+                
+                signatures = []; 
                 currentPage = 1;
                 
                 // Setup page selector
                 pageSelector.innerHTML = '';
-                for (let i = 1; i <= currentPdfDoc.getPageCount(); i++) {
+                const pageCount = currentPdfDoc.getPageCount();
+                for (let i = 1; i <= pageCount; i++) {
                     const option = document.createElement('option');
                     option.value = i;
                     option.textContent = `หน้า ${i}`;
                     pageSelector.appendChild(option);
                 }
                 
-                await renderPDFPage(currentPage);
+                await renderPDFPage(currentPage); 
+                
                 pdfPreviewArea.classList.remove('hidden');
                 saveSignedBtn.disabled = false;
                 
                 updateProgress(100, 'เสร็จสิ้น');
+                showStatus('โหลดไฟล์ PDF สำเร็จ!', 'success');
                 hideProgress();
             } catch (error) {
                 showStatus('เกิดข้อผิดพลาดในการโหลดไฟล์: ' + error.message, 'error');
+                console.error('PDF Load Error:', error);
+                signFileInput.value = '';
+                pdfPreviewArea.classList.add('hidden');
+                currentPdfDoc = null;
+                currentPdfBytes = null;
+                saveSignedBtn.disabled = true;
                 hideProgress();
             }
         });
 
+        // Page Navigation Logic
+        async function updatePage(delta) {
+            if (!currentPdfDoc) return;
+            const newPage = currentPage + delta;
+            const pageCount = currentPdfDoc.getPageCount();
+
+            if (newPage >= 1 && newPage <= pageCount) {
+                currentPage = newPage;
+                pageSelector.value = currentPage; 
+                await renderPDFPage(currentPage);
+            }
+        }
+        
         pageSelector.addEventListener('change', async (e) => {
-            currentPage = parseInt(e.target.value);
-            await renderPDFPage(currentPage);
+            const selectedPage = parseInt(e.target.value);
+            if (!isNaN(selectedPage) && selectedPage !== currentPage) {
+                currentPage = selectedPage;
+                await renderPDFPage(currentPage);
+            }
         });
+
+        prevPageBtn.addEventListener('click', () => updatePage(-1));
+        nextPageBtn.addEventListener('click', () => updatePage(1));
 
         signatureSizeSlider.addEventListener('input', (e) => {
             signatureSize = parseInt(e.target.value);
             signatureSizeValue.textContent = signatureSize + 'px';
         });
 
+        // Renders the PDF page and updates button states
         async function renderPDFPage(pageNum) {
-            const loadingTask = pdfjsLib.getDocument({ data: currentPdfBytes });
-            const pdf = await loadingTask.promise;
-            const page = await pdf.getPage(pageNum);
-            
-            const viewport = page.getViewport({ scale: pdfScale });
-            pdfCanvas.height = viewport.height;
-            pdfCanvas.width = viewport.width;
-            
-            const context = pdfCanvas.getContext('2d');
-            await page.render({
-                canvasContext: context,
-                viewport: viewport
-            }).promise;
-            
-            // Render existing signatures on this page
-            renderSignaturesOnCanvas(pageNum);
+            try {
+                if (!currentPdfBytes) throw new Error('ไม่พบข้อมูล PDF');
+                
+                // --- FIX: Create a copy of the Uint8Array before sending to the worker ---
+                const pdfBytesCopy = currentPdfBytes.slice(); 
+
+                const loadingTask = pdfjsLib.getDocument({ 
+                    data: pdfBytesCopy
+                });
+                const pdf = await loadingTask.promise;
+                const page = await pdf.getPage(pageNum);
+                
+                const viewport = page.getViewport({ scale: pdfScale });
+                
+                // --- Portrait Enforcement ---
+                const rotation = page.rotate;
+                
+                if (viewport.width > viewport.height || rotation === 90 || rotation === 270) {
+                    const context = pdfCanvas.getContext('2d');
+                    context.clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
+                    
+                    pdfCanvas.width = 600;
+                    pdfCanvas.height = 300;
+                    
+                    showStatus('❌ ไม่รองรับเอกสารแนวนอน กรุณาเลือกไฟล์แนวตั้งเท่านั้น', 'error');
+                    
+                    // Reset document state completely on landscape detection
+                    prevPageBtn.disabled = true;
+                    nextPageBtn.disabled = true;
+                    currentPdfDoc = null; 
+                    currentPdfBytes = null;
+                    signFileInput.value = ''; 
+                    pdfPreviewArea.classList.add('hidden');
+                    
+                    return;
+                }
+                
+                pdfCanvas.width = viewport.width;
+                pdfCanvas.height = viewport.height;
+                
+                const context = pdfCanvas.getContext('2d');
+                context.clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
+                
+                await page.render({
+                    canvasContext: context,
+                    viewport: viewport
+                }).promise;
+
+                // Update navigation button states
+                const pageCount = currentPdfDoc ? currentPdfDoc.getPageCount() : 1;
+                prevPageBtn.disabled = pageNum === 1;
+                nextPageBtn.disabled = pageNum === pageCount;
+                
+                renderSignaturesOnCanvas(pageNum);
+            } catch (error) {
+                console.error('Error rendering PDF page:', error);
+                showStatus('Error rendering PDF page: ' + error.message, 'error');
+            }
         }
 
+        // Function to update the style of the placeholder
+        function updatePlaceholderStyle(placeholder, sig) {
+            placeholder.style.left = sig.x + 'px';
+            placeholder.style.top = sig.y + 'px';
+            placeholder.style.width = sig.width + 'px';
+            placeholder.style.height = sig.height + 'px';
+            
+            placeholder.style.backgroundImage = `url('${sig.data}')`;
+        }
+        
+        // Render Signatures with Draggable/Resizable Placeholders
         function renderSignaturesOnCanvas(pageNum) {
-            // Remove old placeholders
             document.querySelectorAll('.signature-placeholder').forEach(el => el.remove());
             
-            // Add placeholders for signatures on current page
-            signatures.filter(sig => sig.page === pageNum).forEach((sig, index) => {
+            signatures.filter(sig => sig.page === pageNum).forEach((sig) => {
                 const placeholder = document.createElement('div');
                 placeholder.className = 'signature-placeholder';
-                placeholder.style.left = sig.x + 'px';
-                placeholder.style.top = sig.y + 'px';
-                placeholder.style.width = sig.width + 'px';
-                placeholder.style.height = sig.height + 'px';
                 placeholder.dataset.index = signatures.indexOf(sig);
                 
-                placeholder.addEventListener('click', (e) => {
-                    if (e.target === placeholder.querySelector('::after') || e.target === placeholder) {
-                        const idx = parseInt(placeholder.dataset.index);
-                        signatures.splice(idx, 1);
-                        renderSignaturesOnCanvas(currentPage);
-                    }
+                updatePlaceholderStyle(placeholder, sig);
+                
+                const resizerTR = document.createElement('div');
+                resizerTR.className = 'resizer top-right';
+                placeholder.appendChild(resizerTR);
+                
+                const resizerBL = document.createElement('div');
+                resizerBL.className = 'resizer bottom-left';
+                placeholder.appendChild(resizerBL);
+                
+                const deleteBtn = document.createElement('div');
+                deleteBtn.className = 'delete-btn';
+                deleteBtn.textContent = '✕';
+                
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const idx = parseInt(placeholder.dataset.index);
+                    signatures.splice(idx, 1);
+                    renderSignaturesOnCanvas(currentPage);
                 });
+                placeholder.appendChild(deleteBtn);
+                
+                makeResizableAndDraggable(placeholder, sig);
                 
                 canvasContainer.appendChild(placeholder);
             });
         }
 
         // Click to place signature
-        pdfCanvas.addEventListener('click', async (e) => {
+        document.getElementById('pdfCanvas').addEventListener('click', async (e) => {
+            if (!signatureImage) {
+                 showStatus('กรุณาสร้างหรือเลือกลายเซ็นก่อน', 'error');
+                return;
+            }
+            
             const rect = pdfCanvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
             
-            let signatureData = null;
             let width = signatureSize;
-            let height = signatureSize * 0.4; // Aspect ratio
-            
-            if (currentSignMode === 'draw') {
-                if (isCanvasBlank(drawCanvas)) {
-                    showStatus('กรุณาวาดลายเซ็นก่อน', 'error');
-                    return;
-                }
-                signatureData = drawCanvas.toDataURL();
-            } else if (currentSignMode === 'type') {
-                if (!typeInput.value.trim()) {
-                    showStatus('กรุณากรอกชื่อ', 'error');
-                    return;
-                }
-                signatureData = await generateTextSignature(typeInput.value, currentFont);
-            } else if (currentSignMode === 'upload') {
-                if (!signatureImage) {
-                    showStatus('กรุณาอัพโหลดรูปลายเซ็น', 'error');
-                    return;
-                }
-                signatureData = signatureImage;
+            let height = signatureSize * 0.4;
+
+            try {
+                signatures.push({
+                    page: currentPage,
+                    x: x - width / 2,
+                    y: y - height / 2,
+                    width: width,
+                    height: height,
+                    data: signatureImage
+                });
+                
+                renderSignaturesOnCanvas(currentPage);
+            } catch (error) {
+                showStatus('เกิดข้อผิดพลาดในการวางลายเซ็น: ' + error.message, 'error');
+                console.error('Signature placement error:', error);
             }
-            
-            signatures.push({
-                page: currentPage,
-                x: x - width / 2,
-                y: y - height / 2,
-                width: width,
-                height: height,
-                data: signatureData
-            });
-            
-            renderSignaturesOnCanvas(currentPage);
         });
 
         function isCanvasBlank(canvas) {
@@ -943,20 +1349,20 @@
 
         async function generateTextSignature(text, font) {
             const canvas = document.createElement('canvas');
-            canvas.width = 600;
-            canvas.height = 200;
+            canvas.width = 800;
+            canvas.height = 300;
             const ctx = canvas.getContext('2d');
             
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
             
             ctx.fillStyle = 'black';
-            ctx.font = `bold 72px ${font === '1' ? 'Caveat' : font === '2' ? 'Dancing Script' : 'Pacifico'}`;
+            const fontFamily = font === '1' ? 'Mali' : font === '2' ? 'Kodchasan' : 'Charm';
+            ctx.font = `bold 96px ${fontFamily}`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(text, canvas.width / 2, canvas.height / 2);
             
-            return canvas.toDataURL();
+            return canvas.toDataURL('image/png');
         }
 
         // Save signed PDF
@@ -966,30 +1372,62 @@
                 return;
             }
             
+            if (!currentPdfDoc) {
+                showStatus('ข้อผิดพลาด: ไม่พบเอกสาร PDF ต้นฉบับ กรุณาโหลดไฟล์ PDF ใหม่อีกครั้ง', 'error');
+                return;
+            }
+
             try {
                 showProgress();
-                updateProgress(50, 'กำลังสร้างไฟล์...');
+                updateProgress(30, 'กำลังเตรียมไฟล์...');
                 
                 const { PDFDocument } = PDFLib;
-                const pdfDoc = await PDFDocument.load(currentPdfBytes);
+                
+                // FIX: Create a NEW document and copy pages from the original (currentPdfDoc)
+                const newPdfDoc = await PDFDocument.create();
+                
+                const pageIndices = currentPdfDoc.getPageIndices();
+                const copiedPages = await newPdfDoc.copyPages(currentPdfDoc, pageIndices);
+                copiedPages.forEach(page => newPdfDoc.addPage(page));
+                
+                updateProgress(50, 'กำลังฝังลายเซ็น...');
                 
                 for (const sig of signatures) {
-                    const page = pdfDoc.getPages()[sig.page - 1];
+                    const page = newPdfDoc.getPages()[sig.page - 1]; 
                     const { height: pageHeight } = page.getSize();
                     
-                    const imgData = sig.data.split(',')[1];
-                    const imgBytes = Uint8Array.from(atob(imgData), c => c.charCodeAt(0));
+                    const imageBase64Data = sig.data;
+                    const base64Data = imageBase64Data.includes(',') ? imageBase64Data.split(',')[1] : imageBase64Data;
                     
-                    let image;
-                    if (sig.data.startsWith('data:image/png')) {
-                        image = await pdfDoc.embedPng(imgBytes);
-                    } else {
-                        image = await pdfDoc.embedJpg(imgBytes);
+                    let imgBytes;
+                    try {
+                        imgBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+                    } catch (e) {
+                        console.error(`Error decoding base64 for page ${sig.page}:`, e);
+                        showStatus(`ไม่สามารถฝังลายเซ็นหน้า ${sig.page} ได้: ข้อมูลลายเซ็นเสียหาย`, 'error');
+                        continue; 
                     }
                     
-                    // Convert canvas coordinates to PDF coordinates
+                    let image;
+                    try {
+                        if (imageBase64Data.includes('image/png')) {
+                            image = await newPdfDoc.embedPng(imgBytes);
+                        } else if (imageBase64Data.includes('image/jpeg') || imageBase64Data.includes('image/jpg')) {
+                            image = await newPdfDoc.embedJpg(imgBytes);
+                        } else {
+                            image = await newPdfDoc.embedPng(imgBytes);
+                        }
+                    } catch (e) {
+                        console.error(`Error embedding image for page ${sig.page}:`, e);
+                        showStatus(`ไม่สามารถฝังรูปลายเซ็นในไฟล์ PDF ได้`, 'error');
+                        continue; 
+                    }
+                    
+                    // Convert canvas coordinates (top-left origin) to PDF coordinates (bottom-left origin)
                     const pdfX = (sig.x / pdfCanvas.width) * page.getWidth();
-                    const pdfY = pageHeight - ((sig.y / pdfCanvas.height) * pageHeight) - ((sig.height / pdfCanvas.height) * pageHeight);
+                    const sigYFromBottomCanvas = pdfCanvas.height - (sig.y + sig.height);
+                    const pdfY = (sigYFromBottomCanvas / pdfCanvas.height) * pageHeight;
+                    
                     const pdfWidth = (sig.width / pdfCanvas.width) * page.getWidth();
                     const pdfHeight = (sig.height / pdfCanvas.height) * pageHeight;
                     
@@ -1001,25 +1439,26 @@
                     });
                 }
                 
-                const pdfBytes = await pdfDoc.save();
+                updateProgress(80, 'กำลังบันทึกไฟล์...');
+                const pdfBytes = await newPdfDoc.save(); 
                 
                 updateProgress(100, 'เสร็จสิ้น');
-                downloadPDF(pdfBytes, 'signed-pdf');
-                showStatus('ลงลายเซ็นสำเร็จ!', 'success');
+                downloadPDF(pdfBytes, docName.value.trim() || 'signed-pdf'); 
+                showStatus('ลงลายเซ็นสำเร็จ! ไฟล์ถูกดาวน์โหลดแล้ว', 'success');
                 hideProgress();
             } catch (error) {
-                showStatus('เกิดข้อผิดพลาด: ' + error.message, 'error');
-                console.error(error);
+                showStatus('เกิดข้อผิดพลาดในการบันทึก: ' + error.message, 'error');
+                console.error('Full error:', error);
                 hideProgress();
             }
         });
 
         clearSignBtn.addEventListener('click', () => {
             signFileInput.value = '';
-            typeInput.value = '';
-            typePreview.textContent = '';
-            uploadSignInput.value = '';
-            uploadPreviewContainer.classList.add('hidden');
+            document.getElementById('typeInput').value = '';
+            document.getElementById('typePreview').textContent = '';
+            document.getElementById('uploadSignInput').value = '';
+            document.getElementById('uploadPreviewContainer').classList.add('hidden');
             drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
             pdfPreviewArea.classList.add('hidden');
             signatures = [];
@@ -1027,55 +1466,674 @@
             currentPdfBytes = null;
             signatureImage = null;
             saveSignedBtn.disabled = true;
+            
+            document.querySelectorAll('#signatureManager .sig-item').forEach(el => el.classList.remove('selected-sig'));
+            
+            document.querySelectorAll('.signature-placeholder').forEach(el => el.remove());
         });
 
-        // Utility functions
-        function downloadPDF(pdfBytes, baseName) {
-            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-            const url = URL.createObjectURL(blob);
-            const thaiDateTime = getThaiDateTime();
-            const filename = `${baseName} ${thaiDateTime}.pdf`;
+        // ----------------------------------------------------
+        // Saved Signatures Management
+        // ----------------------------------------------------
+        
+        function loadSavedSignatures() {
+            const data = localStorage.getItem(localStorageKey);
+            if (data) {
+                try {
+                    savedSignaturesList = JSON.parse(data);
+                    renderSignatureManager();
+                } catch (e) {
+                    console.error('Error loading saved signatures:', e);
+                    savedSignaturesList = [];
+                }
+            }
+        }
+
+        function saveSignaturesToStorage() {
+            localStorage.setItem(localStorageKey, JSON.stringify(savedSignaturesList));
+        }
+
+        function addSignature(mode, data, name, font = null) {
+            if (!data) return;
             
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        }
+            let finalData = data;
 
-        function showProgress() {
-            progressContainer.classList.remove('hidden');
-            updateProgress(0, 'เริ่มต้น...');
-        }
-
-        function hideProgress() {
-            setTimeout(() => {
-                progressContainer.classList.add('hidden');
-            }, 1000);
-        }
-
-        function updateProgress(percent, text) {
-            progressBar.style.width = percent + '%';
-            progressText.textContent = text;
-        }
-
-        function showStatus(message, type) {
-            statusMessage.className = `mt-6 p-4 rounded-lg ${type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`;
-            statusMessage.textContent = message;
-            statusMessage.classList.remove('hidden');
+            if (mode !== 'type') {
+                if (savedSignaturesList.some(sig => sig.data === data && sig.mode === mode)) {
+                    showStatus('ลายเซ็นนี้ถูกบันทึกไว้แล้ว', 'error');
+                    return;
+                }
+            }
             
-            setTimeout(() => {
-                hideStatus();
-            }, 5000);
+            const newSig = {
+                id: Date.now().toString(),
+                mode: mode,
+                name: name || `ลายเซ็นใหม่ ${savedSignaturesList.length + 1}`,
+                data: finalData,
+                font: font
+            };
+            
+            savedSignaturesList.push(newSig);
+            saveSignaturesToStorage();
+            renderSignatureManager();
+            showStatus(`บันทึกลายเซ็น "${newSig.name}" สำเร็จ`, 'success');
         }
 
-        function hideStatus() {
-            statusMessage.classList.add('hidden');
+        window.deleteSavedSignature = (id) => {
+            savedSignaturesList = savedSignaturesList.filter(sig => sig.id !== id);
+            saveSignaturesToStorage();
+            renderSignatureManager();
+            document.getElementById('signatureManager').querySelector('.selected-sig')?.classList.remove('selected-sig');
+            signatureImage = null; 
+            showStatus('ลบรายการลายเซ็นสำเร็จ', 'success');
+        };
+
+        window.selectSavedSignature = async (index) => {
+            document.querySelectorAll('#signatureManager .sig-item').forEach(el => el.classList.remove('selected-sig'));
+            const selectedSig = savedSignaturesList[index];
+            
+            if (selectedSig) {
+                let sigDataToPlace = null;
+                
+                if (selectedSig.mode === 'type') {
+                    sigDataToPlace = await generateTextSignature(selectedSig.data, selectedSig.font);
+                    showStatus(`เลือกลายเซ็นแบบพิมพ์ชื่อ "${selectedSig.name}" พร้อมใช้งานแล้ว`, 'success');
+                } else {
+                    sigDataToPlace = selectedSig.data;
+                    showStatus(`เลือกลายเซ็นแบบภาพ "${selectedSig.name}" พร้อมใช้งานแล้ว`, 'success');
+                }
+                
+                signatureImage = sigDataToPlace;
+                
+                document.getElementById(`sig-item-${selectedSig.id}`).classList.add('selected-sig');
+            }
+        };
+
+        function renderSignatureManager() {
+            const managerDiv = document.getElementById('signatureManager');
+            if (!managerDiv) return;
+            
+            managerDiv.innerHTML = '';
+            
+            if (savedSignaturesList.length === 0) {
+                managerDiv.innerHTML = '<p class="text-center text-gray-500 col-span-full" id="noSigMessage">ยังไม่มีลายเซ็นที่บันทึกไว้</p>';
+                return;
+            }
+            
+            savedSignaturesList.forEach((sig, index) => {
+                const sigItem = document.createElement('div');
+                sigItem.id = `sig-item-${sig.id}`;
+                sigItem.className = 'sig-item flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-indigo-50 transition-all';
+                sigItem.addEventListener('click', () => {
+                    window.selectSavedSignature(index);
+                });
+                
+                let iconHtml = '';
+                let previewContent = '';
+                
+                if (sig.mode === 'draw') {
+                    iconHtml = `<svg class="w-6 h-6 text-indigo-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>`;
+                    previewContent = `<img src="${sig.data}" class="h-6 max-w-[80px] object-contain">`;
+                } else if (sig.mode === 'type') {
+                    iconHtml = `<svg class="w-6 h-6 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>`;
+                    previewContent = `<span class="signature-font-${sig.font} text-2xl">${sig.data}</span>`;
+                } else if (sig.mode === 'upload') {
+                    iconHtml = `<svg class="w-6 h-6 text-purple-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>`;
+                    previewContent = `<img src="${sig.data}" class="h-6 max-w-[80px] object-contain">`;
+                }
+                
+                sigItem.innerHTML = `
+                    ${iconHtml}
+                    <div class="flex-1 overflow-hidden">
+                        <p class="font-semibold text-gray-800">${sig.name}</p>
+                        <div class="text-sm text-gray-500 flex items-center">
+                            ${previewContent}
+                        </div>
+                    </div>
+                    <button onclick="event.stopPropagation(); deleteSavedSignature('${sig.id}')" class="p-1 text-red-500 hover:text-red-700 ml-4">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                `;
+                
+                managerDiv.appendChild(sigItem);
+            });
+        }
+        
+        document.getElementById('useCurrentSigBtn').addEventListener('click', async () => {
+            let name = prompt("กรุณาตั้งชื่อสำหรับลายเซ็นนี้:");
+            if (!name) return;
+            
+            try {
+                if (currentSignMode === 'draw') {
+                    if (isCanvasBlank(drawCanvas)) {
+                        showStatus('กรุณาวาดลายเซ็นก่อนบันทึก', 'error');
+                        return;
+                    }
+                    const data = drawCanvas.toDataURL('image/png');
+                    addSignature('draw', data, name);
+                } else if (currentSignMode === 'type') {
+                    if (!document.getElementById('typeInput').value.trim()) {
+                        showStatus('กรุณากรอกชื่อก่อนบันทึก', 'error');
+                        return;
+                    }
+                    const data = document.getElementById('typeInput').value.trim();
+                    await addSignature('type', data, name, currentFont);
+                } else if (currentSignMode === 'upload') {
+                    const file = document.getElementById('uploadSignInput').files[0];
+                    if (!file) {
+                        showStatus('กรุณาอัพโหลดรูปลายเซ็นก่อนบันทึก', 'error');
+                        return;
+                    }
+                    
+                    const reader = new FileReader();
+                    reader.onload = async (event) => {
+                        await addSignature('upload', event.target.result, name);
+                        await window.selectSavedSignature(savedSignaturesList.length - 1);
+                    };
+                    reader.readAsDataURL(file);
+                    return;
+                }
+                
+                if (currentSignMode !== 'upload') {
+                    await window.selectSavedSignature(savedSignaturesList.length - 1);
+                }
+            } catch (error) {
+                showStatus('เกิดข้อผิดพลาดในการบันทึกลายเซ็น: ' + error.message, 'error');
+                console.error('Save signature error:', error);
+            }
+        });
+
+        // ----------------------------------------------------
+        // Draggable and Resizable Logic
+        // ----------------------------------------------------
+
+        function makeResizableAndDraggable(element, sig) {
+            let currentX, currentY, initialX, initialY, initialWidth, initialHeight;
+            let isDragging = false;
+            let isResizing = false;
+            let activeResizer = null;
+
+            // DRAGGING
+            element.addEventListener('mousedown', dragStart, false);
+            element.addEventListener('touchstart', dragStart, false);
+
+            function dragStart(e) {
+                if (e.target.classList.contains('resizer') || e.target.classList.contains('delete-btn')) {
+                    return;
+                }
+                
+                isDragging = true;
+                element.classList.add('dragging');
+                
+                const clientPos = e.type.startsWith("touch") ? e.touches[0] : e;
+                initialX = clientPos.clientX;
+                initialY = clientPos.clientY;
+                
+                const computedStyle = window.getComputedStyle(element);
+                currentX = parseInt(computedStyle.left, 10);
+                currentY = parseInt(computedStyle.top, 10);
+                
+                document.addEventListener('mousemove', drag, false);
+                document.addEventListener('mouseup', dragEnd, false);
+                document.addEventListener('touchmove', drag, false);
+                document.addEventListener('touchend', dragEnd, false);
+            }
+
+            function drag(e) {
+                if (!isDragging) return;
+
+                e.preventDefault();
+                
+                const clientPos = e.type.startsWith("touch") ? e.touches[0] : e;
+                const clientX = clientPos.clientX;
+                const clientY = clientPos.clientY;
+                
+                const dx = clientX - initialX;
+                const dy = clientY - initialY;
+
+                let newX = currentX + dx;
+                let newY = currentY + dy;
+                
+                newX = Math.max(0, Math.min(newX, pdfCanvas.width - sig.width));
+                newY = Math.max(0, Math.min(newY, pdfCanvas.height - sig.height));
+
+                element.style.left = newX + 'px';
+                element.style.top = newY + 'px';
+                
+                sig.x = newX;
+                sig.y = newY;
+            }
+
+            function dragEnd() {
+                if (!isDragging) return;
+                isDragging = false;
+                element.classList.remove('dragging');
+                
+                document.removeEventListener('mousemove', drag, false);
+                document.removeEventListener('mouseup', dragEnd, false);
+                document.removeEventListener('touchmove', drag, false);
+                document.removeEventListener('touchend', dragEnd, false);
+            }
+            
+            // RESIZING
+            element.querySelectorAll('.resizer').forEach(resizer => {
+                resizer.addEventListener('mousedown', resizeStart, false);
+                resizer.addEventListener('touchstart', resizeStart, false);
+            });
+            
+            function resizeStart(e) {
+                e.stopPropagation();
+                isResizing = true;
+                activeResizer = e.target;
+                
+                const clientPos = e.type.startsWith("touch") ? e.touches[0] : e;
+                initialX = clientPos.clientX;
+                initialY = clientPos.clientY;
+                
+                const computedStyle = window.getComputedStyle(element);
+                initialWidth = parseInt(computedStyle.width, 10);
+                initialHeight = parseInt(computedStyle.height, 10);
+                currentX = parseInt(computedStyle.left, 10);
+                currentY = parseInt(computedStyle.top, 10);
+                
+                document.addEventListener('mousemove', resize, false);
+                document.addEventListener('mouseup', resizeEnd, false);
+                document.addEventListener('touchmove', resize, false);
+                document.addEventListener('touchend', resizeEnd, false);
+            }
+
+            function resize(e) {
+                if (!isResizing) return;
+                
+                e.preventDefault();
+                
+                const clientPos = e.type.startsWith("touch") ? e.touches[0] : e;
+                const clientX = clientPos.clientX;
+                const clientY = clientPos.clientY;
+                
+                const dx = clientX - initialX;
+                const dy = clientY - initialY;
+                
+                let newWidth = initialWidth;
+                let newHeight = initialHeight;
+                let newX = currentX;
+                let newY = currentY;
+
+                if (activeResizer.classList.contains('top-right')) {
+                    newWidth = initialWidth + dx;
+                    newHeight = initialHeight - dy;
+                    newY = currentY + dy;
+                } else if (activeResizer.classList.contains('bottom-left')) {
+                    newWidth = initialWidth - dx;
+                    newHeight = initialHeight + dy;
+                    newX = currentX + dx;
+                }
+                
+                newWidth = Math.max(50, newWidth);
+                newHeight = Math.max(20, newHeight);
+                
+                newX = Math.max(0, newX);
+                newY = Math.max(0, newY);
+                newWidth = Math.min(newWidth, pdfCanvas.width - newX);
+                newHeight = Math.min(newHeight, pdfCanvas.height - newY);
+
+                element.style.width = newWidth + 'px';
+                element.style.height = newHeight + 'px';
+                element.style.left = newX + 'px';
+                element.style.top = newY + 'px';
+                
+                sig.x = newX;
+                sig.y = newY;
+                sig.width = newWidth;
+                sig.height = newHeight;
+            }
+
+            function resizeEnd() {
+                if (!isResizing) return;
+                isResizing = false;
+                activeResizer = null;
+                
+                document.removeEventListener('mousemove', resize, false);
+                document.removeEventListener('mouseup', resizeEnd, false);
+                document.removeEventListener('touchmove', resize, false);
+                document.removeEventListener('touchend', resizeEnd, false);
+                
+                updatePlaceholderStyle(element, sig);
+            }
+        }
+        
+        // ----------------------------------------------------
+        // Image to PDF Functions
+        // ----------------------------------------------------
+
+        // --- NEW: Debounce Utility ---
+        function debounce(func, delay) {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), delay);
+            };
+        }
+        // --- END: Debounce Utility ---
+        
+        imageToPdfInput.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            addImages(files);
+        });
+
+        function addImages(files) {
+            files.forEach(file => {
+                if (file.type === 'image/jpeg' || file.type === 'image/png') {
+                    imagesToConvert.push(file);
+                } else {
+                    showStatus(`ไฟล์ ${file.name} ไม่ใช่ไฟล์รูปภาพที่รองรับ (JPG/PNG)`, 'error');
+                }
+            });
+            renderImageList();
         }
 
+        function renderImageList() {
+            if (!imageToPdfList) return;
+            
+            imageToPdfList.innerHTML = '';
+            if (imagesToConvert.length === 0) {
+                imageToPdfList.innerHTML = '<p class="text-center text-gray-500 col-span-full" id="noImageMessage">ยังไม่มีรูปภาพที่เลือก</p>';
+                document.getElementById('convertImagesBtn').disabled = true;
+                return;
+            }
+            
+            document.getElementById('convertImagesBtn').disabled = false;
+            
+            imagesToConvert.forEach((file, index) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const item = document.createElement('div');
+                    item.className = 'image-item-draggable bg-gray-50 p-3 rounded-lg border border-gray-200 relative group';
+                    item.draggable = true;
+                    item.dataset.index = index;
+                    
+                    item.innerHTML = `
+                        <img src="${e.target.result}" class="file-preview-image mx-auto mb-2" alt="${file.name}">
+                        <p class="text-xs font-medium text-gray-700 truncate">${index + 1}. ${file.name}</p>
+                        <p class="text-xs text-gray-500">${(file.size / 1024).toFixed(2)} KB</p>
+                        <button onclick="removeImageToPdf(${index})" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                    `;
+                    imageToPdfList.appendChild(item);
+                    
+                    // Add drag listeners
+                    item.addEventListener('dragstart', handleDragStart);
+                    item.addEventListener('dragover', handleDragOver);
+                    item.addEventListener('drop', handleDrop);
+                    item.addEventListener('dragend', handleDragEnd);
+                };
+                reader.readAsDataURL(file);
+            });
+            renderLayoutPreview();
+        }
+
+        // --- Drag and Drop Sorting Functions ---
+        let dragSrcEl = null;
+
+        function handleDragStart(e) {
+            e.target.classList.add('is-dragging');
+            dragSrcEl = e.target;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/html', e.target.innerHTML);
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            const targetEl = e.target.closest('.image-item-draggable');
+            if (targetEl && dragSrcEl !== targetEl) {
+                // Visual insertion point feedback (optional)
+            }
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        }
+
+        function handleDrop(e) {
+            e.stopPropagation();
+            const targetEl = e.target.closest('.image-item-draggable');
+            
+            if (dragSrcEl !== targetEl && targetEl) {
+                const dragIndex = parseInt(dragSrcEl.dataset.index);
+                const dropIndex = parseInt(targetEl.dataset.index);
+                
+                const draggedItem = imagesToConvert[dragIndex];
+                imagesToConvert.splice(dragIndex, 1);
+                imagesToConvert.splice(dropIndex, 0, draggedItem);
+
+                renderImageList();
+            }
+            return false;
+        }
+
+        function handleDragEnd(e) {
+            e.target.classList.remove('is-dragging');
+        }
+        // --- End Drag and Drop Sorting Functions ---
+        
+        window.removeImageToPdf = (index) => {
+            imagesToConvert.splice(index, 1);
+            renderImageList();
+        };
+
+        clearImagesBtn.addEventListener('click', () => {
+            imagesToConvert = [];
+            imageToPdfInput.value = '';
+            renderImageList();
+            hideStatus();
+        });
+        
+        // --- Layout Preview Functions (Debounced version for smooth UX) ---
+        window.renderLayoutPreview = () => {
+            // FIX: Get elements inside function for stability
+            const container = document.getElementById('layoutPreviewWrapper');
+            const imagesPerPageCountSpan = document.getElementById('imagesPerPageCount');
+            const previewPageNumSpan = document.getElementById('previewPageNum');
+            const previewPageTotalSpan = document.getElementById('previewPageTotal');
+            const prevLayoutBtn = document.getElementById('prevLayoutBtn');
+            const nextLayoutBtn = document.getElementById('nextLayoutBtn');
+
+            if (!container || !imagesPerPageCountSpan || !previewPageNumSpan) return; // Critical check
+
+            const cols = parseInt(layoutColumnsInput.value) || 1;
+            const rows = parseInt(layoutRowsInput.value) || 1;
+            const vPad = parseFloat(paddingVerticalInput.value) || 0; 
+            const hPad = parseFloat(paddingHorizontalInput.value) || 0; 
+            
+            const imagesPerGrid = cols * rows;
+            const totalImages = imagesToConvert.length;
+            const totalPages = Math.ceil(totalImages / imagesPerGrid) || 1;
+
+            currentLayoutPage = Math.min(currentLayoutPage, totalPages);
+            currentLayoutPage = Math.max(currentLayoutPage, 1);
+            
+            imagesPerPageCountSpan.textContent = imagesPerGrid;
+            previewPageNumSpan.textContent = currentLayoutPage;
+            previewPageTotalSpan.textContent = totalPages;
+            
+            // Update Navigation Buttons
+            prevLayoutBtn.disabled = currentLayoutPage === 1;
+            nextLayoutBtn.disabled = currentLayoutPage === totalPages;
+
+            container.innerHTML = '';
+            
+            // Set Grid template style for the A4 Preview
+            const previewPage = document.createElement('div');
+            previewPage.className = 'preview-page';
+            previewPage.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+            previewPage.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+            
+            // Calculate effective cell dimensions including padding
+            const cellWidthMM = A4_WIDTH_MM / cols;
+            const cellHeightMM = A4_HEIGHT_MM / rows;
+            const effectiveCellWidthMM = cellWidthMM - (2 * hPad); 
+            const effectiveCellHeightMM = cellHeightMM - (2 * vPad); 
+
+            if (effectiveCellWidthMM <= 0 || effectiveCellHeightMM <= 0) {
+                container.innerHTML = '<div class="p-4 text-red-500">❌ Padding/Grid มีค่าไม่เหมาะสม</div>';
+                document.getElementById('convertImagesBtn').disabled = true;
+                return;
+            }
+            document.getElementById('convertImagesBtn').disabled = totalImages === 0;
+
+            const startImageIndex = (currentLayoutPage - 1) * imagesPerGrid;
+            
+            for (let i = 0; i < imagesPerGrid; i++) {
+                const globalIndex = startImageIndex + i;
+                const cell = document.createElement('div');
+                cell.className = 'preview-grid-cell';
+                
+                // Set padding for visual effect on the cell content
+                cell.style.padding = `${vPad}mm ${hPad}mm`;
+                
+                if (globalIndex < totalImages) {
+                    const file = imagesToConvert[globalIndex];
+                    const reader = new FileReader();
+                    // Use closure to capture cell element
+                    reader.onload = (e) => {
+                        const img = document.createElement('img');
+                        img.src = e.target.result;
+                        cell.appendChild(img);
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    cell.style.backgroundColor = '#f8f8ff';
+                    if (totalImages === 0 && globalIndex === 0) cell.innerHTML = '<span class="text-xs text-gray-300">A4</span>';
+                }
+                
+                previewPage.appendChild(cell);
+            }
+            container.appendChild(previewPage);
+        };
+        
+        // Apply debounce to the preview rendering function
+        const debouncedRenderLayoutPreview = debounce(window.renderLayoutPreview, 300);
+
+
+        prevLayoutBtn.addEventListener('click', () => {
+            currentLayoutPage--;
+            window.renderLayoutPreview(); // Instant render for button click
+        });
+
+        nextLayoutBtn.addEventListener('click', () => {
+            currentLayoutPage++;
+            window.renderLayoutPreview(); // Instant render for button click
+        });
+        // --- End Layout Preview Functions ---
+
+
+        convertImagesBtn.addEventListener('click', async () => {
+            if (imagesToConvert.length === 0) return;
+            
+            const cols = parseInt(layoutColumnsInput.value) || 1;
+            const rows = parseInt(layoutRowsInput.value) || 1;
+            const vPadMM = parseFloat(paddingVerticalInput.value) || 0; 
+            const hPadMM = parseFloat(paddingHorizontalInput.value) || 0; 
+            
+            const imagesPerGrid = cols * rows;
+            
+            if (imagesPerGrid < 1) {
+                showStatus('กรุณากำหนดจำนวนคอลัมน์และแถวให้ถูกต้อง', 'error');
+                return;
+            }
+
+            try {
+                showProgress();
+                const { PDFDocument, PageSizes } = PDFLib;
+                const pdfDoc = await PDFDocument.create();
+                
+                const pageWidth = A4_WIDTH_PT; 
+                const pageHeight = A4_HEIGHT_PT;
+                
+                // Calculate Padding in PDF points
+                const vPadPT = vPadMM * MM_TO_POINTS;
+                const hPadPT = hPadMM * MM_TO_POINTS;
+
+                // Calculate Cell dimensions (including total space for padding)
+                const cellWidth = pageWidth / cols;
+                const cellHeight = pageHeight / rows;
+                
+                // Calculate internal draw area for the image
+                const drawAreaWidth = cellWidth - (2 * hPadPT);
+                const drawAreaHeight = cellHeight - (2 * vPadPT);
+                
+                if (drawAreaWidth <= 0 || drawAreaHeight <= 0) {
+                    throw new Error('Padding (ระยะห่าง) ที่กำหนดมากเกินไป ทำให้รูปภาพไม่สามารถแสดงผลได้');
+                }
+                
+                let imageIndex = 0;
+                while (imageIndex < imagesToConvert.length) {
+                    const page = pdfDoc.addPage(PageSizes.A4);
+                    
+                    for (let r = 0; r < rows; r++) {
+                        for (let c = 0; c < cols; c++) {
+                            if (imageIndex >= imagesToConvert.length) break;
+
+                            const file = imagesToConvert[imageIndex];
+                            updateProgress((imageIndex / imagesToConvert.length) * 100, `กำลังแปลงรูปภาพ ${imageIndex + 1}/${imagesToConvert.length}`);
+                            
+                            const imageBytes = await file.arrayBuffer();
+                            let image;
+                            let imgWidth, imgHeight;
+
+                            const imgLoader = new Image();
+                            imgLoader.src = URL.createObjectURL(new Blob([imageBytes], { type: file.type }));
+                            await new Promise(resolve => imgLoader.onload = resolve);
+                            imgWidth = imgLoader.width;
+                            imgHeight = imgLoader.height;
+                            URL.revokeObjectURL(imgLoader.src);
+
+                            if (file.type === 'image/jpeg') {
+                                image = await pdfDoc.embedJpg(imageBytes);
+                            } else if (file.type === 'image/png') {
+                                image = await pdfDoc.embedPng(imageBytes);
+                            } else {
+                                imageIndex++;
+                                continue; 
+                            }
+                            
+                            // Calculate draw size to fit inside the draw area, maintaining aspect ratio
+                            const ratio = Math.min(drawAreaWidth / imgWidth, drawAreaHeight / imgHeight);
+                            const finalDrawWidth = imgWidth * ratio;
+                            const finalDrawHeight = imgHeight * ratio;
+                            
+                            // Calculate position: [Total Offset] + [Cell offset] + [Padding] + [Center alignment inside draw area]
+                            const x = (c * cellWidth) + hPadPT + ((drawAreaWidth - finalDrawWidth) / 2);
+                            const y = pageHeight - (r * cellHeight) - cellHeight + vPadPT + ((drawAreaHeight - finalDrawHeight) / 2); // PDF Y-origin is bottom-left
+
+                            page.drawImage(image, {
+                                x,
+                                y,
+                                width: finalDrawWidth,
+                                height: finalDrawHeight,
+                            });
+                            
+                            imageIndex++;
+                        }
+                        if (imageIndex >= imagesToConvert.length) break;
+                    }
+                }
+
+                updateProgress(100, 'กำลังสร้างไฟล์ PDF...');
+                const pdfBytes = await pdfDoc.save();
+                downloadPDF(pdfBytes, docName.value.trim() || 'images-to-pdf');
+                showStatus(`แปลงรูปภาพ ${imagesToConvert.length} ไฟล์เป็น PDF สำเร็จ!`, 'success');
+                
+            } catch (error) {
+                showStatus('เกิดข้อผิดพลาดในการแปลงไฟล์: ' + error.message, 'error');
+                console.error('Image to PDF Error:', error);
+            } finally {
+                hideProgress();
+            }
+        });
+
+
+        // Initial setup calls
         updateMergeButton();
+        document.addEventListener('DOMContentLoaded', loadSavedSignatures);
+        document.addEventListener('DOMContentLoaded', renderLayoutPreview);
     </script>
 </body>
 </html>
