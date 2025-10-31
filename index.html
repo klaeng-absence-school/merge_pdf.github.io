@@ -5,10 +5,67 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Klaeng Merge PDF Service</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&family=Caveat:wght@700&family=Dancing+Script:wght@700&family=Pacifico&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .signature-font-1 { font-family: 'Caveat', cursive; }
+        .signature-font-2 { font-family: 'Dancing Script', cursive; }
+        .signature-font-3 { font-family: 'Pacifico', cursive; }
+        .pdf-page-thumbnail { cursor: pointer; position: relative; }
+        .pdf-page-thumbnail.selected { border: 3px solid #ef4444; }
+        .pdf-page-thumbnail.selected::after {
+            content: '✓ ลบ';
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: #ef4444;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .signature-preview {
+            border: 2px dashed #ccc;
+            background: #f9f9f9;
+            display: inline-block;
+            padding: 10px;
+            min-width: 200px;
+            min-height: 80px;
+        }
+        #pdfCanvas { 
+            border: 1px solid #ddd; 
+            cursor: crosshair;
+            max-width: 100%;
+        }
+        .dragging { opacity: 0.5; }
+        .signature-placeholder {
+            position: absolute;
+            border: 2px dashed #4f46e5;
+            background: rgba(79, 70, 229, 0.1);
+            cursor: move;
+        }
+        .signature-placeholder::after {
+            content: '✕';
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: #ef4444;
+            color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            cursor: pointer;
+        }
+    </style>
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
-    <div class="container mx-auto px-4 py-8 max-w-4xl">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
         <div class="bg-white rounded-2xl shadow-2xl p-8">
             <!-- Header -->
             <div class="text-center mb-8">
@@ -16,49 +73,205 @@
                 <p class="text-gray-600">เลือกไฟล์ PDF หลายไฟล์เพื่อรวมเป็นไฟล์เดียว</p>
             </div>
 
-            <!-- Document Name Input -->
-            <div class="mb-6">
-                <label for="docName" class="block text-sm font-semibold text-gray-700 mb-2">ชื่อเอกสาร:</label>
-                <input type="text" id="docName" placeholder="กรอกชื่อเอกสาร" class="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-indigo-500 focus:outline-none transition-all">
+            <!-- Tab Navigation -->
+            <div class="flex mb-6 border-b border-gray-200">
+                <button id="tabMerge" class="tab-button px-6 py-3 font-semibold border-b-2 border-indigo-600 text-indigo-600">
+                    รวม PDF
+                </button>
+                <button id="tabDelete" class="tab-button px-6 py-3 font-semibold text-gray-600 hover:text-indigo-600">
+                    ลบหน้า PDF
+                </button>
+                <button id="tabSign" class="tab-button px-6 py-3 font-semibold text-gray-600 hover:text-indigo-600">
+                    ลงลายเซ็น
+                </button>
             </div>
 
-            <!-- Upload Area -->
-            <div class="mb-6">
-                <label for="fileInput" class="block mb-4">
-                    <div class="border-4 border-dashed border-indigo-300 rounded-xl p-12 text-center hover:border-indigo-500 hover:bg-indigo-50 transition-all cursor-pointer">
-                        <svg class="mx-auto h-16 w-16 text-indigo-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
-                        </svg>
-                        <p class="text-lg font-semibold text-gray-700 mb-2">คลิกเพื่อเลือกไฟล์ PDF</p>
-                        <p class="text-sm text-gray-500">หรือลากไฟล์มาวางที่นี่ (เลือกได้หลายไฟล์)</p>
-                    </div>
-                </label>
-                <input type="file" id="fileInput" accept=".pdf" multiple class="hidden">
-            </div>
+            <!-- Merge PDF Tab -->
+            <div id="mergePanel" class="tab-panel">
+                <!-- Document Name Input -->
+                <div class="mb-6">
+                    <label for="docName" class="block text-sm font-semibold text-gray-700 mb-2">ชื่อเอกสาร:</label>
+                    <input type="text" id="docName" placeholder="กรอกชื่อเอกสาร" class="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-indigo-500 focus:outline-none transition-all">
+                </div>
 
-            <!-- File List -->
-            <div id="fileList" class="mb-6 space-y-2"></div>
+                <!-- Upload Area -->
+                <div class="mb-6">
+                    <label for="fileInput" class="block mb-4">
+                        <div class="border-4 border-dashed border-indigo-300 rounded-xl p-12 text-center hover:border-indigo-500 hover:bg-indigo-50 transition-all cursor-pointer">
+                            <svg class="mx-auto h-16 w-16 text-indigo-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                            </svg>
+                            <p class="text-lg font-semibold text-gray-700 mb-2">คลิกเพื่อเลือกไฟล์ PDF</p>
+                            <p class="text-sm text-gray-500">หรือลากไฟล์มาวางที่นี่ (เลือกได้หลายไฟล์)</p>
+                        </div>
+                    </label>
+                    <input type="file" id="fileInput" accept=".pdf" multiple class="hidden">
+                </div>
 
-            <!-- File Counter -->
-            <div id="fileCounter" class="mb-4 text-center">
-                <span class="inline-block bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg font-semibold">
-                    จำนวนไฟล์ที่เลือก: <span id="fileCount">0</span> ไฟล์
-                </span>
-            </div>
+                <!-- File List -->
+                <div id="fileList" class="mb-6 space-y-2"></div>
 
-            <!-- Action Buttons -->
-            <div class="flex gap-4">
-                <button id="mergeBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none shadow-lg">
-                    <span class="flex items-center justify-center">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                        </svg>
-                        รวม PDF
+                <!-- File Counter -->
+                <div id="fileCounter" class="mb-4 text-center">
+                    <span class="inline-block bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg font-semibold">
+                        จำนวนไฟล์ที่เลือก: <span id="fileCount">0</span> ไฟล์
                     </span>
-                </button>
-                <button id="clearBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-700 font-bold py-4 px-6 rounded-xl transition-all">
-                    ล้างทั้งหมด
-                </button>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex gap-4">
+                    <button id="mergeBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-6 rounded-xl transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none shadow-lg">
+                        <span class="flex items-center justify-center">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                            รวม PDF
+                        </span>
+                    </button>
+                    <button id="clearBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-700 font-bold py-4 px-6 rounded-xl transition-all">
+                        ล้างทั้งหมด
+                    </button>
+                </div>
+            </div>
+
+            <!-- Delete Pages Tab -->
+            <div id="deletePanel" class="tab-panel hidden">
+                <div class="mb-6">
+                    <label for="deleteFileInput" class="block mb-4">
+                        <div class="border-4 border-dashed border-indigo-300 rounded-xl p-12 text-center hover:border-indigo-500 hover:bg-indigo-50 transition-all cursor-pointer">
+                            <svg class="mx-auto h-16 w-16 text-indigo-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                            </svg>
+                            <p class="text-lg font-semibold text-gray-700 mb-2">เลือกไฟล์ PDF เพื่อลบหน้า</p>
+                            <p class="text-sm text-gray-500">เลือกได้ทีละ 1 ไฟล์</p>
+                        </div>
+                    </label>
+                    <input type="file" id="deleteFileInput" accept=".pdf" class="hidden">
+                </div>
+
+                <div id="deleteFileName" class="mb-4 text-center text-gray-700 font-semibold"></div>
+
+                <div id="pageThumbnails" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"></div>
+
+                <div class="flex gap-4">
+                    <button id="deleteSelectedBtn" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-6 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                        ลบหน้าที่เลือก
+                    </button>
+                    <button id="clearDeleteBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-700 font-bold py-4 px-6 rounded-xl transition-all">
+                        ล้าง
+                    </button>
+                </div>
+            </div>
+
+            <!-- Sign PDF Tab -->
+            <div id="signPanel" class="tab-panel hidden">
+                <div class="mb-6">
+                    <label for="signFileInput" class="block mb-4">
+                        <div class="border-4 border-dashed border-indigo-300 rounded-xl p-12 text-center hover:border-indigo-500 hover:bg-indigo-50 transition-all cursor-pointer">
+                            <svg class="mx-auto h-16 w-16 text-indigo-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                            </svg>
+                            <p class="text-lg font-semibold text-gray-700 mb-2">เลือกไฟล์ PDF เพื่อลงลายเซ็น</p>
+                        </div>
+                    </label>
+                    <input type="file" id="signFileInput" accept=".pdf" class="hidden">
+                </div>
+
+                <!-- Signature Mode Selection -->
+                <div class="mb-6">
+                    <label class="block text-sm font-semibold text-gray-700 mb-3">เลือกรูปแบบลายเซ็น:</label>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <button id="modeDrawBtn" class="signature-mode-btn p-4 border-2 border-indigo-600 bg-indigo-50 rounded-xl text-center hover:bg-indigo-100 transition-all">
+                            <svg class="w-8 h-8 mx-auto mb-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+                            </svg>
+                            <span class="font-semibold">เขียนด้วยตัวเอง</span>
+                        </button>
+                        <button id="modeTypeBtn" class="signature-mode-btn p-4 border-2 border-gray-300 rounded-xl text-center hover:bg-gray-50 transition-all">
+                            <svg class="w-8 h-8 mx-auto mb-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                            </svg>
+                            <span class="font-semibold">พิมพ์ชื่อ</span>
+                        </button>
+                        <button id="modeUploadBtn" class="signature-mode-btn p-4 border-2 border-gray-300 rounded-xl text-center hover:bg-gray-50 transition-all">
+                            <svg class="w-8 h-8 mx-auto mb-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            <span class="font-semibold">อัพโหลดรูป</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Draw Signature Panel -->
+                <div id="drawPanel" class="signature-panel mb-6">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">วาดลายเซ็นของคุณ:</label>
+                    <div class="border-2 border-gray-300 rounded-xl p-4 bg-white">
+                        <canvas id="drawCanvas" width="600" height="200" class="border border-gray-300 rounded w-full"></canvas>
+                        <button id="clearDrawBtn" class="mt-2 px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-700 rounded-lg transition-all">
+                            ล้างลายเซ็น
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Type Signature Panel -->
+                <div id="typePanel" class="signature-panel hidden mb-6">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">พิมพ์ชื่อของคุณ:</label>
+                    <input type="text" id="typeInput" placeholder="กรอกชื่อ" class="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-indigo-500 focus:outline-none mb-3">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">เลือกฟอนต์:</label>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <button class="font-selector p-3 border-2 border-indigo-600 bg-indigo-50 rounded-lg signature-font-1 text-2xl" data-font="1">
+                            ลายมือแบบที่ 1
+                        </button>
+                        <button class="font-selector p-3 border-2 border-gray-300 rounded-lg signature-font-2 text-2xl" data-font="2">
+                            ลายมือแบบที่ 2
+                        </button>
+                        <button class="font-selector p-3 border-2 border-gray-300 rounded-lg signature-font-3 text-2xl" data-font="3">
+                            ลายมือแบบที่ 3
+                        </button>
+                    </div>
+                    <div class="mt-4">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">ตัวอย่าง:</label>
+                        <div class="signature-preview">
+                            <span id="typePreview" class="signature-font-1 text-4xl"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Upload Signature Panel -->
+                <div id="uploadPanel" class="signature-panel hidden mb-6">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">อัพโหลดรูปลายเซ็น:</label>
+                    <input type="file" id="uploadSignInput" accept="image/*" class="mb-3 w-full px-4 py-3 border-2 border-gray-300 rounded-xl">
+                    <div id="uploadPreviewContainer" class="hidden">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">ตัวอย่าง:</label>
+                        <img id="uploadPreview" class="max-w-xs border-2 border-gray-300 rounded-lg">
+                    </div>
+                </div>
+
+                <!-- PDF Preview Area -->
+                <div id="pdfPreviewArea" class="hidden mb-6">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">คลิกเพื่อวางลายเซ็นในตำแหน่งที่ต้องการ:</label>
+                    <div class="mb-3 flex gap-2 items-center">
+                        <label class="text-sm font-semibold text-gray-700">หน้า:</label>
+                        <select id="pageSelector" class="px-3 py-2 border-2 border-gray-300 rounded-lg"></select>
+                        <label class="text-sm font-semibold text-gray-700 ml-4">ขนาดลายเซ็น:</label>
+                        <input type="range" id="signatureSizeSlider" min="50" max="300" value="150" class="w-32">
+                        <span id="signatureSizeValue" class="text-sm text-gray-600">150px</span>
+                    </div>
+                    <div class="border-2 border-gray-300 rounded-xl p-4 bg-white relative" style="overflow: auto;">
+                        <div id="canvasContainer" class="relative inline-block">
+                            <canvas id="pdfCanvas"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-4">
+                    <button id="saveSignedBtn" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-6 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                        บันทึก PDF ที่ลงลายเซ็น
+                    </button>
+                    <button id="clearSignBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-700 font-bold py-4 px-6 rounded-xl transition-all">
+                        ล้าง
+                    </button>
+                </div>
             </div>
 
             <!-- Progress Bar -->
@@ -75,43 +288,118 @@
     </div>
 
     <script>
+        // PDF.js setup
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // Global variables
+        let selectedFiles = [];
+        let currentPdfBytes = null;
+        let currentPdfDoc = null;
+        let pagesToDelete = new Set();
+        let currentSignMode = 'draw';
+        let currentFont = '1';
+        let signatureImage = null;
+        let signatures = [];
+        let currentPage = 1;
+        let pdfScale = 1.5;
+        let signatureSize = 150;
+
+        // Elements
         const fileInput = document.getElementById('fileInput');
         const fileList = document.getElementById('fileList');
         const fileCount = document.getElementById('fileCount');
         const docName = document.getElementById('docName');
         const mergeBtn = document.getElementById('mergeBtn');
         const clearBtn = document.getElementById('clearBtn');
+        
+        // Tab elements
+        const tabMerge = document.getElementById('tabMerge');
+        const tabDelete = document.getElementById('tabDelete');
+        const tabSign = document.getElementById('tabSign');
+        const mergePanel = document.getElementById('mergePanel');
+        const deletePanel = document.getElementById('deletePanel');
+        const signPanel = document.getElementById('signPanel');
+        
+        // Delete page elements
+        const deleteFileInput = document.getElementById('deleteFileInput');
+        const deleteFileName = document.getElementById('deleteFileName');
+        const pageThumbnails = document.getElementById('pageThumbnails');
+        const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+        const clearDeleteBtn = document.getElementById('clearDeleteBtn');
+        
+        // Sign elements
+        const signFileInput = document.getElementById('signFileInput');
+        const modeDrawBtn = document.getElementById('modeDrawBtn');
+        const modeTypeBtn = document.getElementById('modeTypeBtn');
+        const modeUploadBtn = document.getElementById('modeUploadBtn');
+        const drawPanel = document.getElementById('drawPanel');
+        const typePanel = document.getElementById('typePanel');
+        const uploadPanel = document.getElementById('uploadPanel');
+        const drawCanvas = document.getElementById('drawCanvas');
+        const clearDrawBtn = document.getElementById('clearDrawBtn');
+        const typeInput = document.getElementById('typeInput');
+        const typePreview = document.getElementById('typePreview');
+        const uploadSignInput = document.getElementById('uploadSignInput');
+        const uploadPreview = document.getElementById('uploadPreview');
+        const uploadPreviewContainer = document.getElementById('uploadPreviewContainer');
+        const pdfPreviewArea = document.getElementById('pdfPreviewArea');
+        const pdfCanvas = document.getElementById('pdfCanvas');
+        const canvasContainer = document.getElementById('canvasContainer');
+        const pageSelector = document.getElementById('pageSelector');
+        const signatureSizeSlider = document.getElementById('signatureSizeSlider');
+        const signatureSizeValue = document.getElementById('signatureSizeValue');
+        const saveSignedBtn = document.getElementById('saveSignedBtn');
+        const clearSignBtn = document.getElementById('clearSignBtn');
+        
         const progressContainer = document.getElementById('progressContainer');
         const progressBar = document.getElementById('progressBar');
         const progressText = document.getElementById('progressText');
         const statusMessage = document.getElementById('statusMessage');
 
-        let selectedFiles = [];
-
-        // Thai month names
-        const thaiMonths = [
-            'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
-            'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
-        ];
+        // Thai datetime
+        const thaiMonths = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+            'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
 
         function getThaiDateTime() {
             const now = new Date();
             const day = now.getDate();
             const month = thaiMonths[now.getMonth()];
-            const year = now.getFullYear() + 543; // Convert to Buddhist year
+            const year = now.getFullYear() + 543;
             const hours = String(now.getHours()).padStart(2, '0');
             const minutes = String(now.getMinutes()).padStart(2, '0');
             const seconds = String(now.getSeconds()).padStart(2, '0');
-            
             return `${day} ${month} ${year} ${hours}:${minutes}:${seconds}`;
         }
 
-        // Handle file selection
+        // Tab switching
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('border-indigo-600', 'text-indigo-600');
+                btn.classList.add('text-gray-600');
+            });
+            document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.add('hidden'));
+            
+            if (tab === 'merge') {
+                tabMerge.classList.add('border-indigo-600', 'text-indigo-600');
+                mergePanel.classList.remove('hidden');
+            } else if (tab === 'delete') {
+                tabDelete.classList.add('border-indigo-600', 'text-indigo-600');
+                deletePanel.classList.remove('hidden');
+            } else if (tab === 'sign') {
+                tabSign.classList.add('border-indigo-600', 'text-indigo-600');
+                signPanel.classList.remove('hidden');
+            }
+        }
+
+        tabMerge.addEventListener('click', () => switchTab('merge'));
+        tabDelete.addEventListener('click', () => switchTab('delete'));
+        tabSign.addEventListener('click', () => switchTab('sign'));
+
+        // Merge PDF functionality
         fileInput.addEventListener('change', (e) => {
             addFiles(Array.from(e.target.files));
         });
 
-        // Handle drag and drop
         const dropArea = fileInput.previousElementSibling;
         
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -252,26 +540,509 @@
             updateProgress(100, 'กำลังสร้างไฟล์...');
 
             const mergedPdfBytes = await mergedPdf.save();
-            const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
-            const url = URL.createObjectURL(blob);
+            downloadPDF(mergedPdfBytes, docName.value.trim() || 'merged-pdf');
+            showStatus('รวม PDF สำเร็จ! ไฟล์ถูกดาวน์โหลดแล้ว', 'success');
+        }
 
-            // Generate filename
-            const baseName = docName.value.trim() || 'merged-pdf';
+        // Delete Pages functionality
+        deleteFileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            try {
+                showProgress();
+                updateProgress(50, 'กำลังโหลดไฟล์...');
+                
+                const arrayBuffer = await file.arrayBuffer();
+                currentPdfBytes = new Uint8Array(arrayBuffer);
+                const { PDFDocument } = PDFLib;
+                currentPdfDoc = await PDFDocument.load(currentPdfBytes);
+                
+                deleteFileName.textContent = `ไฟล์: ${file.name} (${currentPdfDoc.getPageCount()} หน้า)`;
+                pagesToDelete.clear();
+                
+                await renderPageThumbnails();
+                deleteSelectedBtn.disabled = true;
+                
+                updateProgress(100, 'เสร็จสิ้น');
+                hideProgress();
+            } catch (error) {
+                showStatus('เกิดข้อผิดพลาดในการโหลดไฟล์: ' + error.message, 'error');
+                hideProgress();
+            }
+        });
+
+        async function renderPageThumbnails() {
+            pageThumbnails.innerHTML = '';
+            const pageCount = currentPdfDoc.getPageCount();
+            
+            const loadingTask = pdfjsLib.getDocument({ data: currentPdfBytes });
+            const pdf = await loadingTask.promise;
+
+            for (let i = 1; i <= pageCount; i++) {
+                const page = await pdf.getPage(i);
+                const scale = 0.5;
+                const viewport = page.getViewport({ scale });
+                
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                await page.render({
+                    canvasContext: context,
+                    viewport: viewport
+                }).promise;
+                
+                const container = document.createElement('div');
+                container.className = 'pdf-page-thumbnail border-2 border-gray-300 rounded-lg p-2 hover:border-indigo-500 transition-all';
+                container.dataset.pageNum = i;
+                
+                const pageLabel = document.createElement('div');
+                pageLabel.className = 'text-center font-semibold text-sm mb-2';
+                pageLabel.textContent = `หน้า ${i}`;
+                
+                container.appendChild(pageLabel);
+                container.appendChild(canvas);
+                
+                container.addEventListener('click', () => {
+                    if (pagesToDelete.has(i)) {
+                        pagesToDelete.delete(i);
+                        container.classList.remove('selected');
+                    } else {
+                        pagesToDelete.add(i);
+                        container.classList.add('selected');
+                    }
+                    deleteSelectedBtn.disabled = pagesToDelete.size === 0 || pagesToDelete.size === pageCount;
+                });
+                
+                pageThumbnails.appendChild(container);
+            }
+        }
+
+        deleteSelectedBtn.addEventListener('click', async () => {
+            if (pagesToDelete.size === 0) return;
+            
+            try {
+                showProgress();
+                updateProgress(50, 'กำลังลบหน้า...');
+                
+                const { PDFDocument } = PDFLib;
+                const newPdf = await PDFDocument.create();
+                
+                const pageCount = currentPdfDoc.getPageCount();
+                for (let i = 0; i < pageCount; i++) {
+                    if (!pagesToDelete.has(i + 1)) {
+                        const [copiedPage] = await newPdf.copyPages(currentPdfDoc, [i]);
+                        newPdf.addPage(copiedPage);
+                    }
+                }
+                
+                updateProgress(80, 'กำลังสร้างไฟล์...');
+                const pdfBytes = await newPdf.save();
+                
+                updateProgress(100, 'เสร็จสิ้น');
+                downloadPDF(pdfBytes, 'deleted-pages-pdf');
+                showStatus(`ลบ ${pagesToDelete.size} หน้าสำเร็จ!`, 'success');
+                hideProgress();
+                
+                // Reset
+                pagesToDelete.clear();
+                deleteFileInput.value = '';
+                deleteFileName.textContent = '';
+                pageThumbnails.innerHTML = '';
+                currentPdfDoc = null;
+                currentPdfBytes = null;
+            } catch (error) {
+                showStatus('เกิดข้อผิดพลาด: ' + error.message, 'error');
+                hideProgress();
+            }
+        });
+
+        clearDeleteBtn.addEventListener('click', () => {
+            pagesToDelete.clear();
+            deleteFileInput.value = '';
+            deleteFileName.textContent = '';
+            pageThumbnails.innerHTML = '';
+            currentPdfDoc = null;
+            currentPdfBytes = null;
+            deleteSelectedBtn.disabled = true;
+        });
+
+        // Sign PDF functionality
+        const drawCtx = drawCanvas.getContext('2d');
+        let isDrawing = false;
+
+        // Drawing setup
+        drawCanvas.addEventListener('mousedown', startDrawing);
+        drawCanvas.addEventListener('mousemove', draw);
+        drawCanvas.addEventListener('mouseup', stopDrawing);
+        drawCanvas.addEventListener('mouseout', stopDrawing);
+        
+        // Touch support
+        drawCanvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const mouseEvent = new MouseEvent('mousedown', {
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            });
+            drawCanvas.dispatchEvent(mouseEvent);
+        });
+        
+        drawCanvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const mouseEvent = new MouseEvent('mousemove', {
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            });
+            drawCanvas.dispatchEvent(mouseEvent);
+        });
+        
+        drawCanvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            const mouseEvent = new MouseEvent('mouseup', {});
+            drawCanvas.dispatchEvent(mouseEvent);
+        });
+
+        function startDrawing(e) {
+            isDrawing = true;
+            const rect = drawCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            drawCtx.beginPath();
+            drawCtx.moveTo(x, y);
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            const rect = drawCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            drawCtx.lineWidth = 2;
+            drawCtx.lineCap = 'round';
+            drawCtx.strokeStyle = '#000';
+            drawCtx.lineTo(x, y);
+            drawCtx.stroke();
+        }
+
+        function stopDrawing() {
+            isDrawing = false;
+        }
+
+        clearDrawBtn.addEventListener('click', () => {
+            drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+        });
+
+        // Mode switching
+        function switchSignMode(mode) {
+            currentSignMode = mode;
+            
+            document.querySelectorAll('.signature-mode-btn').forEach(btn => {
+                btn.classList.remove('border-indigo-600', 'bg-indigo-50');
+                btn.classList.add('border-gray-300');
+            });
+            
+            document.querySelectorAll('.signature-panel').forEach(panel => panel.classList.add('hidden'));
+            
+            if (mode === 'draw') {
+                modeDrawBtn.classList.add('border-indigo-600', 'bg-indigo-50');
+                modeDrawBtn.classList.remove('border-gray-300');
+                drawPanel.classList.remove('hidden');
+            } else if (mode === 'type') {
+                modeTypeBtn.classList.add('border-indigo-600', 'bg-indigo-50');
+                modeTypeBtn.classList.remove('border-gray-300');
+                typePanel.classList.remove('hidden');
+            } else if (mode === 'upload') {
+                modeUploadBtn.classList.add('border-indigo-600', 'bg-indigo-50');
+                modeUploadBtn.classList.remove('border-gray-300');
+                uploadPanel.classList.remove('hidden');
+            }
+        }
+
+        modeDrawBtn.addEventListener('click', () => switchSignMode('draw'));
+        modeTypeBtn.addEventListener('click', () => switchSignMode('type'));
+        modeUploadBtn.addEventListener('click', () => switchSignMode('upload'));
+
+        // Type signature
+        typeInput.addEventListener('input', (e) => {
+            typePreview.textContent = e.target.value;
+        });
+
+        document.querySelectorAll('.font-selector').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                currentFont = e.currentTarget.dataset.font;
+                document.querySelectorAll('.font-selector').forEach(b => {
+                    b.classList.remove('border-indigo-600', 'bg-indigo-50');
+                    b.classList.add('border-gray-300');
+                });
+                e.currentTarget.classList.add('border-indigo-600', 'bg-indigo-50');
+                e.currentTarget.classList.remove('border-gray-300');
+                typePreview.className = `signature-font-${currentFont} text-4xl`;
+            });
+        });
+
+        // Upload signature
+        uploadSignInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                signatureImage = event.target.result;
+                uploadPreview.src = signatureImage;
+                uploadPreviewContainer.classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Load PDF for signing
+        signFileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            try {
+                showProgress();
+                updateProgress(50, 'กำลังโหลดไฟล์...');
+                
+                const arrayBuffer = await file.arrayBuffer();
+                currentPdfBytes = new Uint8Array(arrayBuffer);
+                
+                const { PDFDocument } = PDFLib;
+                currentPdfDoc = await PDFDocument.load(currentPdfBytes);
+                
+                signatures = [];
+                currentPage = 1;
+                
+                // Setup page selector
+                pageSelector.innerHTML = '';
+                for (let i = 1; i <= currentPdfDoc.getPageCount(); i++) {
+                    const option = document.createElement('option');
+                    option.value = i;
+                    option.textContent = `หน้า ${i}`;
+                    pageSelector.appendChild(option);
+                }
+                
+                await renderPDFPage(currentPage);
+                pdfPreviewArea.classList.remove('hidden');
+                saveSignedBtn.disabled = false;
+                
+                updateProgress(100, 'เสร็จสิ้น');
+                hideProgress();
+            } catch (error) {
+                showStatus('เกิดข้อผิดพลาดในการโหลดไฟล์: ' + error.message, 'error');
+                hideProgress();
+            }
+        });
+
+        pageSelector.addEventListener('change', async (e) => {
+            currentPage = parseInt(e.target.value);
+            await renderPDFPage(currentPage);
+        });
+
+        signatureSizeSlider.addEventListener('input', (e) => {
+            signatureSize = parseInt(e.target.value);
+            signatureSizeValue.textContent = signatureSize + 'px';
+        });
+
+        async function renderPDFPage(pageNum) {
+            const loadingTask = pdfjsLib.getDocument({ data: currentPdfBytes });
+            const pdf = await loadingTask.promise;
+            const page = await pdf.getPage(pageNum);
+            
+            const viewport = page.getViewport({ scale: pdfScale });
+            pdfCanvas.height = viewport.height;
+            pdfCanvas.width = viewport.width;
+            
+            const context = pdfCanvas.getContext('2d');
+            await page.render({
+                canvasContext: context,
+                viewport: viewport
+            }).promise;
+            
+            // Render existing signatures on this page
+            renderSignaturesOnCanvas(pageNum);
+        }
+
+        function renderSignaturesOnCanvas(pageNum) {
+            // Remove old placeholders
+            document.querySelectorAll('.signature-placeholder').forEach(el => el.remove());
+            
+            // Add placeholders for signatures on current page
+            signatures.filter(sig => sig.page === pageNum).forEach((sig, index) => {
+                const placeholder = document.createElement('div');
+                placeholder.className = 'signature-placeholder';
+                placeholder.style.left = sig.x + 'px';
+                placeholder.style.top = sig.y + 'px';
+                placeholder.style.width = sig.width + 'px';
+                placeholder.style.height = sig.height + 'px';
+                placeholder.dataset.index = signatures.indexOf(sig);
+                
+                placeholder.addEventListener('click', (e) => {
+                    if (e.target === placeholder.querySelector('::after') || e.target === placeholder) {
+                        const idx = parseInt(placeholder.dataset.index);
+                        signatures.splice(idx, 1);
+                        renderSignaturesOnCanvas(currentPage);
+                    }
+                });
+                
+                canvasContainer.appendChild(placeholder);
+            });
+        }
+
+        // Click to place signature
+        pdfCanvas.addEventListener('click', async (e) => {
+            const rect = pdfCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            let signatureData = null;
+            let width = signatureSize;
+            let height = signatureSize * 0.4; // Aspect ratio
+            
+            if (currentSignMode === 'draw') {
+                if (isCanvasBlank(drawCanvas)) {
+                    showStatus('กรุณาวาดลายเซ็นก่อน', 'error');
+                    return;
+                }
+                signatureData = drawCanvas.toDataURL();
+            } else if (currentSignMode === 'type') {
+                if (!typeInput.value.trim()) {
+                    showStatus('กรุณากรอกชื่อ', 'error');
+                    return;
+                }
+                signatureData = await generateTextSignature(typeInput.value, currentFont);
+            } else if (currentSignMode === 'upload') {
+                if (!signatureImage) {
+                    showStatus('กรุณาอัพโหลดรูปลายเซ็น', 'error');
+                    return;
+                }
+                signatureData = signatureImage;
+            }
+            
+            signatures.push({
+                page: currentPage,
+                x: x - width / 2,
+                y: y - height / 2,
+                width: width,
+                height: height,
+                data: signatureData
+            });
+            
+            renderSignaturesOnCanvas(currentPage);
+        });
+
+        function isCanvasBlank(canvas) {
+            const context = canvas.getContext('2d');
+            const pixelBuffer = new Uint32Array(
+                context.getImageData(0, 0, canvas.width, canvas.height).data.buffer
+            );
+            return !pixelBuffer.some(color => color !== 0);
+        }
+
+        async function generateTextSignature(text, font) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 600;
+            canvas.height = 200;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = 'black';
+            ctx.font = `bold 72px ${font === '1' ? 'Caveat' : font === '2' ? 'Dancing Script' : 'Pacifico'}`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+            
+            return canvas.toDataURL();
+        }
+
+        // Save signed PDF
+        saveSignedBtn.addEventListener('click', async () => {
+            if (signatures.length === 0) {
+                showStatus('กรุณาวางลายเซ็นอย่างน้อย 1 ตำแหน่ง', 'error');
+                return;
+            }
+            
+            try {
+                showProgress();
+                updateProgress(50, 'กำลังสร้างไฟล์...');
+                
+                const { PDFDocument } = PDFLib;
+                const pdfDoc = await PDFDocument.load(currentPdfBytes);
+                
+                for (const sig of signatures) {
+                    const page = pdfDoc.getPages()[sig.page - 1];
+                    const { height: pageHeight } = page.getSize();
+                    
+                    const imgData = sig.data.split(',')[1];
+                    const imgBytes = Uint8Array.from(atob(imgData), c => c.charCodeAt(0));
+                    
+                    let image;
+                    if (sig.data.startsWith('data:image/png')) {
+                        image = await pdfDoc.embedPng(imgBytes);
+                    } else {
+                        image = await pdfDoc.embedJpg(imgBytes);
+                    }
+                    
+                    // Convert canvas coordinates to PDF coordinates
+                    const pdfX = (sig.x / pdfCanvas.width) * page.getWidth();
+                    const pdfY = pageHeight - ((sig.y / pdfCanvas.height) * pageHeight) - ((sig.height / pdfCanvas.height) * pageHeight);
+                    const pdfWidth = (sig.width / pdfCanvas.width) * page.getWidth();
+                    const pdfHeight = (sig.height / pdfCanvas.height) * pageHeight;
+                    
+                    page.drawImage(image, {
+                        x: pdfX,
+                        y: pdfY,
+                        width: pdfWidth,
+                        height: pdfHeight
+                    });
+                }
+                
+                const pdfBytes = await pdfDoc.save();
+                
+                updateProgress(100, 'เสร็จสิ้น');
+                downloadPDF(pdfBytes, 'signed-pdf');
+                showStatus('ลงลายเซ็นสำเร็จ!', 'success');
+                hideProgress();
+            } catch (error) {
+                showStatus('เกิดข้อผิดพลาด: ' + error.message, 'error');
+                console.error(error);
+                hideProgress();
+            }
+        });
+
+        clearSignBtn.addEventListener('click', () => {
+            signFileInput.value = '';
+            typeInput.value = '';
+            typePreview.textContent = '';
+            uploadSignInput.value = '';
+            uploadPreviewContainer.classList.add('hidden');
+            drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            pdfPreviewArea.classList.add('hidden');
+            signatures = [];
+            currentPdfDoc = null;
+            currentPdfBytes = null;
+            signatureImage = null;
+            saveSignedBtn.disabled = true;
+        });
+
+        // Utility functions
+        function downloadPDF(pdfBytes, baseName) {
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
             const thaiDateTime = getThaiDateTime();
             const filename = `${baseName} ${thaiDateTime}.pdf`;
-
-            // Create download link with download attribute to suggest save location
+            
             const link = document.createElement('a');
             link.href = url;
             link.download = filename;
-            
-            // For modern browsers, this will open save dialog
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-
             URL.revokeObjectURL(url);
-            showStatus('รวม PDF สำเร็จ! ไฟล์ถูกดาวน์โหลดแล้ว', 'success');
         }
 
         function showProgress() {
